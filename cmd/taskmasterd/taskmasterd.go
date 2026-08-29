@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 var (
@@ -50,8 +50,8 @@ func main() {
 
 	d := yaml.NewDecoder(f)
 	if err := d.Decode(&m); err != nil {
-			fmt.Println("error:  %w", err)
-			return
+		fmt.Println("error:  %w", err)
+		return
 	}
 	fmt.Printf("%v\n", m)
 }
