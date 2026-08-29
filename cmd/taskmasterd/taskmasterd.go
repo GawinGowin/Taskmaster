@@ -49,6 +49,7 @@ func main() {
 	var m map[string]interface{}
 
 	d := yaml.NewDecoder(f)
+	d.KnownFields(true)
 	if err := d.Decode(&m); err != nil {
 		fmt.Println("error:  %w", err)
 		return
