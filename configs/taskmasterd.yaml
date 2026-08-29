@@ -1,0 +1,232 @@
+# taskmasterd.yaml — scripts/test.sh を機能ごとの被験プロセスとして並べた動作確認用の設定。
+# 各プログラムが何を確かめるためのものかは
+# docs/subjects/Taskmaster/2_design/E-01-test-harness-and-scenarios.md
+# ${TM_ROOT} の展開は taskmasterd 側の仕事だが、まだ実装していない（M-1）。
+
+programs:
+  # --- 基本 -----------------------------------------------------------------
+  healthy:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 2
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-healthy.stdout
+    stderr: /tmp/tm-healthy.stderr
+    env:
+      TM_NAME: healthy
+      TM_INTERVAL: "2"
+      STARTED_BY: taskmaster
+      ANSWER: 42
+
+  manual:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /var/tmp
+    autostart: false
+    autorestart: unexpected
+    exitcodes: 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-manual.stdout
+    stderr: /tmp/tm-manual.stderr
+    env:
+      TM_NAME: manual
+      TM_INTERVAL: "2"
+
+  workers:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 4
+    umask: 077
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes: 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-workers.stdout
+    stderr: /tmp/tm-workers.stderr
+    env:
+      TM_NAME: worker
+      TM_INTERVAL: "3"
+
+  # --- 終了と再起動 ---------------------------------------------------------
+  oneshot:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: never
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-oneshot.stdout
+    stderr: /tmp/tm-oneshot.stderr
+    env:
+      TM_NAME: oneshot
+      TM_INTERVAL: "1"
+      TM_TICKS: "8"
+      TM_EXIT_CODE: "0"
+
+  crashloop:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-crashloop.stdout
+    stderr: /tmp/tm-crashloop.stderr
+    env:
+      TM_NAME: crashloop
+      TM_INTERVAL: "2"
+      TM_FAIL_AT: "3"
+      TM_FAIL_CODE: "42"
+
+  reaper:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: always
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-reaper.stdout
+    stderr: /tmp/tm-reaper.stderr
+    env:
+      TM_NAME: reaper
+      TM_INTERVAL: "1"
+      TM_TICKS: "6"
+      TM_EXIT_CODE: "0"
+
+  earlyexit:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 2
+    starttime: 5
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-earlyexit.stdout
+    stderr: /tmp/tm-earlyexit.stderr
+    env:
+      TM_NAME: earlyexit
+      TM_INTERVAL: "1"
+      TM_TICKS: "1"
+      TM_EXIT_CODE: "1"
+
+  # --- 停止のふるまい -------------------------------------------------------
+  slowstop:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: USR1
+    stoptime: 10
+    stdout: /tmp/tm-slowstop.stdout
+    stderr: /tmp/tm-slowstop.stderr
+    env:
+      TM_NAME: slowstop
+      TM_INTERVAL: "2"
+      TM_STOP_DELAY: "8"
+
+  stubborn:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 5
+    stdout: /tmp/tm-stubborn.stdout
+    stderr: /tmp/tm-stubborn.stderr
+    env:
+      TM_NAME: stubborn
+      TM_INTERVAL: "2"
+      TM_IGNORE_STOP: "1"
+
+  # --- 出力の扱い -----------------------------------------------------------
+  noisy:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout: /tmp/tm-noisy.stdout
+    stderr: /tmp/tm-noisy.stderr
+    env:
+      TM_NAME: noisy
+      TM_INTERVAL: "1"
+      TM_SPAM: "50"
+      TM_STDERR_EVERY: "1"
+
+  silent:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    numprocs: 1
+    umask: 022
+    workingdir: /tmp
+    autostart: true
+    autorestart: unexpected
+    exitcodes:
+      - 0
+    starttretries: 3
+    starttime: 3
+    stopsignal: TERM
+    stoptime: 10
+    stdout:
+    stderr:
+    env:
+      TM_NAME: silent
+      TM_INTERVAL: "1"
+      TM_SPAM: "50"
+      TM_STDERR_EVERY: "1"
