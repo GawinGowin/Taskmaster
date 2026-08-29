@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"taskmaster/internal/config"
+
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -26,12 +28,19 @@ var Usage = func() {
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	flag.Usage = Usage
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("taskmasterd %s (commit %s, built %s)\n", version, commit, buildDate)
-		return
+		return nil
 	}
 
 	if flag.NArg() > 0 {
@@ -42,17 +51,16 @@ func main() {
 
 	f, err := os.Open(*cfgPath)
 	if err != nil {
-		fmt.Printf("error: the path \"%s\" does not exist\n", *cfgPath)
-		return
+		return err
 	}
 	defer f.Close()
-	var m map[string]interface{}
+	var m config.Config
 
 	d := yaml.NewDecoder(f)
 	d.KnownFields(true)
 	if err := d.Decode(&m); err != nil {
-		fmt.Println("error:  %w", err)
-		return
+		return err
 	}
 	fmt.Printf("%v\n", m)
+	return nil
 }
