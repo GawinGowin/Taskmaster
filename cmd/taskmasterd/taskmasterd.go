@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	yaml "gopkg.in/yaml.v2"
 )
 
 var (
@@ -38,5 +40,18 @@ func main() {
 		os.Exit(2)
 	}
 
-	fmt.Printf("config: %s\n", *cfgPath)
+	f, err := os.Open(*cfgPath)
+	if err != nil {
+		fmt.Printf("error: the path \"%s\" does not exist\n", *cfgPath)
+		return
+	}
+	defer f.Close()
+	var m map[string]interface{}
+
+	d := yaml.NewDecoder(f)
+	if err := d.Decode(&m); err != nil {
+			fmt.Println("error:  %w", err)
+			return
+	}
+	fmt.Printf("%v\n", m)
 }
