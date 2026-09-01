@@ -158,12 +158,6 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 				}
 			}),
 		},
-		{
-			// 今の挙動を固定するテスト。塞いだら wantErr: true に変える
-			name:     "program 内の未知キーが無視される",
-			yamlFile: "edge_unknown_field_in_program", program: "p",
-			want: def(nil),
-		},
 
 		// 異常系
 		{name: "numprocs: 0 はエラー", yamlFile: "invalid_numprocs_zero", program: "p", wantErr: true},
@@ -177,6 +171,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 		{name: "program がマッピングでなければエラー", yamlFile: "invalid_program_not_mapping", program: "p", wantErr: true},
 		{name: "YAML 構文エラー", yamlFile: "invalid_syntax", program: "p", wantErr: true},
 		{name: "タブインデントはエラー", yamlFile: "invalid_tab_indent", program: "p", wantErr: true},
+		{name: "program 内の未知キーはエラー", yamlFile: "edge_unknown_field_in_program", program: "p", want: def(nil), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -196,10 +191,12 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			if tt.wantErr {
 				return
 			}
-			got := cfg.Programs[tt.program]
-
+			got, ok := cfg.Programs[tt.program]
+			if !ok {
+				t.Fatalf("program %q not found in %s.yaml", tt.program, tt.yamlFile)
+			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got = %#v, want = %#v", got, tt.want)
+				t.Fatalf("got = %#v, want = %#v", got, tt.want)
 			}
 		})
 	}

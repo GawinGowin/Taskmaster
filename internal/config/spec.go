@@ -75,9 +75,25 @@ type Program struct {
 	Env           map[string]string `yaml:"env"`
 }
 
+// 自前の UnmarshalYAML を書いた代償として、その範囲の未知フィールド検出が失われたため
+var programFields = map[string]bool{
+	"cmd": true, "numprocs": true, "umask": true, "workingdir": true,
+	"autostart": true, "autorestart": true, "exitcodes": true,
+	"starttretries": true, "starttime": true, "stopsignal": true,
+	"stoptime": true, "stdout": true, "stderr": true, "env": true,
+}
+
 func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 	type plain Program
-
+	if n.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: program must be a mapping", n.Line)
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k := n.Content[i]
+		if !programFields[k.Value] {
+			return fmt.Errorf("line %d: unknown field %q", k.Line, k.Value)
+		}
+	}
 	p := plain{
 		Numprocs:      1,
 		Autostart:     true,
