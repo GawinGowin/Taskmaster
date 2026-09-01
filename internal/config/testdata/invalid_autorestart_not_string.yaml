@@ -1,0 +1,8 @@
+# 期待: エラー
+# 狙い: Autorestart.UnmarshalYAML 冒頭の n.Decode(&s) が失敗する経路
+#   （unknown autorestart ではなく yaml 側の型エラーになる。
+#    wantErr bool だけだと両者を区別できないことの実例）
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: [always, never]

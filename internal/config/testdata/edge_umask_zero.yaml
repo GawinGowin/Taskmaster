@@ -1,0 +1,6 @@
+# 期待: 成功 / Umask != nil かつ *Umask == 0
+# 狙い: ポインタなら「0 を明示した」を表現できること（int だと nil と区別できない）
+programs:
+  p:
+    cmd: /bin/true
+    umask: 0

@@ -1,0 +1,5 @@
+# 期待: エラー（ScalarNode だが int に変換できない）
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: abc

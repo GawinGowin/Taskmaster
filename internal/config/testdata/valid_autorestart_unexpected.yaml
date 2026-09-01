@@ -1,0 +1,8 @@
+# 期待: 成功 / Autorestart == config.Unexpected
+# 注意: Unexpected は iota の 0、つまり Autorestart のゼロ値。
+#   このファイルが通っても「明示指定が効いた」のか「単にゼロ値のまま」なのかは
+#   テストからは区別できない。always/never のケースと組で意味を持つ。
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: unexpected

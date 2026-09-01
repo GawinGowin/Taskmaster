@@ -1,0 +1,6 @@
+# 期待: 成功 / Umask == nil
+# 狙い: Umask が *int である理由。「未指定」と「umask: 0 を明示」を区別する。
+#   edge_umask_zero.yaml と対で見る
+programs:
+  p:
+    cmd: /bin/true

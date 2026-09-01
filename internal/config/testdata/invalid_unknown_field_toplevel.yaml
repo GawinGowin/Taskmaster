@@ -1,0 +1,9 @@
+# 期待: エラー "line N: field programz not found in type config.Config"
+#   【ただし Decoder.KnownFields(true) を立てた場合のみ】
+# 狙い: yaml.Unmarshal を直接使うテストではこのファイルは通ってしまう。
+#   yaml.NewDecoder + d.KnownFields(true) を経由して初めてエラーになる。
+#   cmd/taskmasterd がそう組んでいるので、テストも同じ組み方にしないと
+#   本番と違う経路を検証することになる
+programz:
+  p:
+    cmd: /bin/true

@@ -1,0 +1,5 @@
+# 期待: 成功 / Programs == nil （実測で確認済み）
+# 狙い: 値を書かない programs: は null。edge_programs_empty_map.yaml の {} は
+#   nil でない空 map になるため、reflect.DeepEqual の結果が両者で変わる。
+#   「プログラム 0 件」を表す書き方が 2 通りあることを意識するためのペア
+programs:

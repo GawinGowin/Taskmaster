@@ -1,0 +1,9 @@
+# 期待: 成功 / Autostart == false
+# 狙い: bool のデフォルトは true。明示的な false がそれを上書きできること。
+#   Program.UnmarshalYAML の plain イディオムが壊れると、ここが真っ先に落ちる
+#   （デフォルト機構が消えると false のまま通ってしまい気づけないので、
+#    valid_minimal.yaml の autostart=true と必ずセットで見る）
+programs:
+  p:
+    cmd: /bin/true
+    autostart: false

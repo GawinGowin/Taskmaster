@@ -1,0 +1,6 @@
+# 期待: 成功 / Exitcodes == ExitCodes{0, 2, 70}
+# 狙い: ExitCodes.UnmarshalYAML の SequenceNode 分岐
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: [0, 2, 70]

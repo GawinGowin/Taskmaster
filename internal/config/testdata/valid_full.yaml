@@ -1,0 +1,21 @@
+# 期待: 成功
+# 狙い: 全フィールドを明示したとき、デフォルト値がすべて上書きされること
+#   valid_minimal.yaml と対にして「デフォルトが効く/上書きが効く」の両方向を押さえる
+programs:
+  full:
+    cmd: /usr/bin/env sleep 60
+    numprocs: 4
+    umask: 0o077
+    workingdir: /var/tmp
+    autostart: false
+    autorestart: always
+    exitcodes: [0, 2, 3]
+    starttretries: 5
+    starttime: 7
+    stopsignal: USR1
+    stoptime: 20
+    stdout: /tmp/full.stdout
+    stderr: /tmp/full.stderr
+    env:
+      TM_NAME: full
+      TM_INTERVAL: "2"

@@ -1,0 +1,6 @@
+# 期待: 成功 / Exitcodes == ExitCodes{2}
+# 狙い: ExitCodes.UnmarshalYAML の ScalarNode 分岐。単一の int を 1要素リストに包む
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: 2

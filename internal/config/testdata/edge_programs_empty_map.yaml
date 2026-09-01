@@ -1,0 +1,3 @@
+# 期待: 成功 / Programs != nil かつ len(Programs) == 0 （実測で確認済み）
+# 狙い: edge_programs_null.yaml との対比。nil map と空 map の区別
+programs: {}

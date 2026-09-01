@@ -1,0 +1,4 @@
+# 期待: edge_empty_file.yaml と同じ（コメントだけのファイルは空ドキュメント扱い）
+#   yaml.Unmarshal -> err == nil / Programs == nil
+#   Decoder.Decode -> err == io.EOF
+# 狙い: 「設定を全部コメントアウトした」状態がエラー扱いになることの確認

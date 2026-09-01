@@ -1,0 +1,5 @@
+# 期待: エラー
+# 狙い: programs 自体がリストになっている（supervisord の INI から移ってきた人がやりがち）
+programs:
+  - name: p
+    cmd: /bin/true

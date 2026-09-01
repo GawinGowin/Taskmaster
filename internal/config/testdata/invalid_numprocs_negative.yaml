@@ -1,0 +1,5 @@
+# 期待: エラー "line N: numprocs must be >= 1, got -3"
+programs:
+  p:
+    cmd: /bin/true
+    numprocs: -3

@@ -1,0 +1,12 @@
+# 期待: 成功
+# 狙い: Config.Programs が map[string]Program として複数件を保持すること
+#   キーが3つ揃うこと、各 Program が独立にデフォルト適用されることを見る
+programs:
+  alpha:
+    cmd: /bin/true
+  bravo:
+    cmd: /bin/false
+    numprocs: 2
+  charlie:
+    cmd: /bin/sleep 1
+    autorestart: never

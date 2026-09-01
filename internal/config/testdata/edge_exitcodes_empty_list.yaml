@@ -1,0 +1,8 @@
+# 期待: 現状は成功 / Exitcodes == ExitCodes{}（nil ではなく空スライス）
+# 狙い: 空リストを許すかは未決定。意味的には「どの終了コードも期待通りでない」
+#   = 常に unexpected 扱いになるため、エラーにする選択肢がある。
+#   reflect.DeepEqual は nil と空スライスを区別するので、どちらを期待値にするか要注意
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: []

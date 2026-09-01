@@ -1,0 +1,5 @@
+# 期待: エラー "yaml: line N: did not find expected node content"
+# 狙い: パーサ以前の構文エラー。UnmarshalYAML は一度も呼ばれない
+programs:
+  p:
+    cmd: [

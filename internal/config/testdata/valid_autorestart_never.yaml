@@ -1,0 +1,5 @@
+# 期待: 成功 / Autorestart == config.Never
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: never

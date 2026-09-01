@@ -1,0 +1,12 @@
+# 期待: 成功 / Env は map[string]string
+# 狙い: 数値・真偽値に見える値でも string として読めること
+#   （map[string]string なので yaml 側が文字列に寄せる）
+programs:
+  p:
+    cmd: /bin/true
+    env:
+      PLAIN: hello
+      NUMERIC: 42
+      BOOLISH: true
+      QUOTED: "0755"
+      EMPTY: ""

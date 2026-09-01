@@ -1,0 +1,6 @@
+# 期待: エラー "line N: numprocs must be >= 1, got 0"
+# 狙い: Program.UnmarshalYAML の妥当性チェック
+programs:
+  p:
+    cmd: /bin/true
+    numprocs: 0

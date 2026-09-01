@@ -1,0 +1,6 @@
+# 期待: エラー "line N: unknown autorestart \"sometimes\""
+# 狙い: Autorestart.UnmarshalYAML の autorestartNames 引き当て失敗
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: sometimes

@@ -1,0 +1,8 @@
+# 期待: エラー "line N: exitcodes: ... cannot unmarshal !!str `a` into int"
+# 狙い: ★ カバレッジの穴だった分岐（SequenceNode 側の n.Decode(&xs) 失敗）。
+#   スカラー文字列やマッピングでは到達できず、
+#   「リストだが要素が int にならない」入力でしか通らない
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: [a, b]

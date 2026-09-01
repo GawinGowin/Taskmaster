@@ -1,0 +1,6 @@
+# 期待: エラー（"Always" は autorestartNames に無い）
+# 狙い: 大文字小文字を許すかどうかの仕様確認。今は厳密一致
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: Always

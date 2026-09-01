@@ -1,0 +1,5 @@
+# 期待: 成功 / Autorestart == config.Always
+programs:
+  p:
+    cmd: /bin/true
+    autorestart: always

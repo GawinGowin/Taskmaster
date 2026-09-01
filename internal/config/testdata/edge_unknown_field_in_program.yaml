@@ -1,0 +1,11 @@
+# 期待: 【現状は成功してしまう】= 既知の穴。将来はエラーにしたい
+# 狙い: Decoder.KnownFields(true) を立てても、Program は自前の UnmarshalYAML を
+#   持つため中の未知キーを検出できない（yaml.Node.Decode が新しい decoder を作り、
+#   KnownFields 設定を引き継がないため）。
+#   autorestat のような打ち間違いが黙って無視され、デフォルトが使われる。
+#   このファイルは「今の挙動を固定するテスト」にも「将来の修正を促す失敗テスト」にも使える
+programs:
+  p:
+    cmd: /bin/true
+    autorestat: always
+    typo_field: 1

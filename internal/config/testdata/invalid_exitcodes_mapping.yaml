@@ -1,0 +1,7 @@
+# 期待: エラー "line N: exitcodes must be an int or a list of ints"
+# 狙い: ExitCodes.UnmarshalYAML の「SequenceNode でも ScalarNode でもない」分岐
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes:
+      a: 1

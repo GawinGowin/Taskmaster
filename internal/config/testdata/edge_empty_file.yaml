@@ -1,0 +1,7 @@
+# 期待: 【読み込み方で結果が変わる】
+#   yaml.Unmarshal([]byte{}, &c)        -> err == nil / Programs == nil
+#   yaml.NewDecoder(f).Decode(&c)       -> err == io.EOF
+# 狙い: Decoder は「ドキュメントが 1 つも無い」を io.EOF で表す。
+#   cmd/taskmasterd は Decoder を使っているので、空の設定ファイルを渡すと
+#   利用者に "error: EOF" とだけ出る。errors.Is(err, io.EOF) で拾って
+#   意味のあるメッセージに変える余地がある

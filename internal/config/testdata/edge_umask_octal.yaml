@@ -1,0 +1,12 @@
+# 期待: 成功 / *Umask == 18
+# 狙い: umask は 8進で書きたいが、Umask は *int で YAML の数値解釈に任せている。
+#   YAML 1.1 の 0 始まりは 8進なので 022 -> 18。0o022 も 18。
+#   一方 "22" と書くと 10進の 22 になり、意図と 4 ずれる。
+#   ここを型で守るなら Umask に自前の UnmarshalYAML が要る
+programs:
+  leading_zero:
+    cmd: /bin/true
+    umask: 022
+  explicit_octal:
+    cmd: /bin/true
+    umask: 0o022

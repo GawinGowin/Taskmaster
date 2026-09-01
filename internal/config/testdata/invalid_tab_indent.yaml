@@ -1,0 +1,7 @@
+# 期待: エラー "found character that cannot start any token"
+# 狙い: YAML はタブでインデントできない。
+#   下の 2 行目以降はタブ文字。エディタの設定で
+#   勝手にスペースに変換されるとこのファイルは意味を失う
+programs:
+	p:
+		cmd: /bin/true
