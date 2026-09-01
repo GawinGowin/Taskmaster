@@ -21,10 +21,10 @@ var (
 	buildDate = "unknown"
 )
 
-type usageError struct{ err error }
+// usageError は使い方の誤り。終了コード 2 と usage 表示を伴う。
+type usageError struct{ msg string }
 
-func (e *usageError) Error() string { return e.err.Error() }
-func (e *usageError) Unwrap() error { return e.err }
+func (e *usageError) Error() string { return e.msg }
 
 func usage() {
 	w := flag.CommandLine.Output()
@@ -54,7 +54,7 @@ func run() error {
 	}
 
 	if flag.NArg() > 0 {
-		return &usageError{fmt.Errorf("unexpected argument: %q", flag.Arg(0))}
+		return &usageError{fmt.Sprintf("unexpected argument: %q", flag.Arg(0))}
 	}
 
 	f, err := os.Open(*cfgPath)
