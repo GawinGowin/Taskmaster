@@ -1,10 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
-
 	"taskmaster/internal/config"
 
 	yaml "gopkg.in/yaml.v3"
@@ -21,21 +21,31 @@ var (
 	buildDate = "unknown"
 )
 
-var Usage = func() {
+type usageError struct{ err error }
+
+func (e *usageError) Error() string { return e.err.Error() }
+func (e *usageError) Unwrap() error { return e.err }
+
+func usage() {
 	w := flag.CommandLine.Output()
-	fmt.Fprintf(w, "usage: %s [flags]\n\nflags:\n", os.Args[0])
+	fmt.Fprintf(w, "usage: %s [flags]\n\nflags:\n", flag.CommandLine.Name())
 	flag.PrintDefaults()
 }
 
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		var ue *usageError
+		if errors.As(err, &ue) {
+			usage()
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	flag.Usage = Usage
+	flag.Usage = usage
 	flag.Parse()
 
 	if *showVersion {
@@ -44,9 +54,7 @@ func run() error {
 	}
 
 	if flag.NArg() > 0 {
-		fmt.Fprintf(flag.CommandLine.Output(), "unexpected argument: %q\n\n", flag.Arg(0))
-		flag.Usage()
-		os.Exit(2)
+		return &usageError{fmt.Errorf("unexpected argument: %q", flag.Arg(0))}
 	}
 
 	f, err := os.Open(*cfgPath)
@@ -59,8 +67,13 @@ func run() error {
 	d := yaml.NewDecoder(f)
 	d.KnownFields(true)
 	if err := d.Decode(&m); err != nil {
+		return fmt.Errorf("%s: %w", *cfgPath, err)
+	}
+
+	ret, err := yaml.Marshal(m)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("%v\n", m)
+	fmt.Printf("%s\n", string(ret))
 	return nil
 }
