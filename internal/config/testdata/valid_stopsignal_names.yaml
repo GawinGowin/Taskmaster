@@ -1,0 +1,26 @@
+# 期待: 成功 / 各 program の Stopsignal が対応する syscall.Signal になる
+# 狙い: availableSignal に載っている 7 つを 1 ファイルで一巡させる。
+#   ADR-016 決定3 のホワイトリストそのもの。増減させたらこのファイルとテスト側の表が動く。
+#   7 つはいずれも POSIX 共通なので GOOS 依存の問題は出ない見込み
+programs:
+  term:
+    cmd: /bin/true
+    stopsignal: TERM
+  hup:
+    cmd: /bin/true
+    stopsignal: HUP
+  int:
+    cmd: /bin/true
+    stopsignal: INT
+  quit:
+    cmd: /bin/true
+    stopsignal: QUIT
+  kill:
+    cmd: /bin/true
+    stopsignal: KILL
+  usr1:
+    cmd: /bin/true
+    stopsignal: USR1
+  usr2:
+    cmd: /bin/true
+    stopsignal: USR2

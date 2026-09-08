@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"syscall"
 	"taskmaster/internal/config"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			Exitcodes:     config.ExitCodes{0},
 			Starttretries: 3,
 			Starttime:     1,
-			Stopsignal:    "TERM",
+			Stopsignal:    config.Stopsignal(syscall.SIGTERM),
 			Stoptime:      10,
 			Stdout:        "",
 			Stderr:        "",
@@ -96,7 +97,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 				Exitcodes:     config.ExitCodes{0, 2, 3},
 				Starttretries: 5,
 				Starttime:     7,
-				Stopsignal:    "USR1",
+				Stopsignal:    config.Stopsignal(syscall.SIGUSR1),
 				Stoptime:      20,
 				Stdout:        "/tmp/full.stdout",
 				Stderr:        "/tmp/full.stderr",

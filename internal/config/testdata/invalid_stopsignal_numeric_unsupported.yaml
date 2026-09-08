@@ -1,0 +1,10 @@
+# 期待: エラー "line N: unsupported stopsignal: 11"
+# 狙い: ADR-016 追記1 の「決定3 は維持で、むしろ数値パスにこそ効く」の証拠。
+#   範囲チェック（1 <= x <= SIGRTMAX）にすると 11(SEGV) が通ってしまい、
+#   availableSignal が飾りになる。数値もホワイトリストの値と照合する。
+#   なお syscall.SIGRTMAX は Go の syscall に存在しない（実測）ので、
+#   そもそも範囲チェックは書けなかった
+programs:
+  p:
+    cmd: /bin/true
+    stopsignal: 11

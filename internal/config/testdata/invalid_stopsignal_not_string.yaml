@@ -1,0 +1,9 @@
+# 期待: エラー "line N: stopsignal must be a signal name"
+# 狙い: スカラー以外を弾く分岐。ExitCodes と同じく自前で n.Kind を見て
+#   "line N: ..." 形式に揃えたので、ADR-016 の未解決の問い
+#   「エラー表現の一貫性をどこまで自前で担保するか」はここでは解消している
+#   （yaml.v3 の生エラーが漏れる Autorestart とは対照的）
+programs:
+  p:
+    cmd: /bin/true
+    stopsignal: [TERM, KILL]

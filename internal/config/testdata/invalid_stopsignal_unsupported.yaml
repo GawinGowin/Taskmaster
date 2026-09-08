@@ -1,0 +1,9 @@
+# 期待: エラー "line N: unknown stopsignal \"SEGV\""
+# 狙い: ADR-016 決定3「シグナルはホワイトリストで持ち、全シグナル対応はしない」の証拠。
+#   本家は signal モジュールにあるものを全部受けるので stopsignal: SEGV が書けてしまう。
+#   停止に使う意味のある 7 個だけに絞り、書けてしまうが無意味な設定を弾く、という判断。
+#   ここは表記の寛容さ（case / SIG 接頭辞）とは独立に、今も ADR どおり弾けている
+programs:
+  p:
+    cmd: /bin/true
+    stopsignal: SEGV
