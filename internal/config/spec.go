@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"strings"
+	"syscall"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -58,6 +60,52 @@ func (c *ExitCodes) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+type Stopsignal syscall.Signal
+
+var availableSignal = map[string]syscall.Signal{
+	"TERM": syscall.SIGTERM,
+	"HUP":  syscall.SIGHUP,
+	"INT":  syscall.SIGINT,
+	"QUIT": syscall.SIGQUIT,
+	"KILL": syscall.SIGKILL,
+	"USR1": syscall.SIGUSR1,
+	"USR2": syscall.SIGUSR2,
+}
+
+func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: stopsignal must be a signal name", n.Line)
+	}
+	switch n.Tag {
+	case "!!str":
+		var s string
+		if err := n.Decode(&s); err != nil {
+			return fmt.Errorf("line %d: stopsignal: %w", n.Line, err)
+		}
+		sig, ok := availableSignal[strings.TrimPrefix(s, "SIG")]
+		if !ok {
+			return fmt.Errorf("line %d: unknown stopsignal %q", n.Line, s)
+		}
+		*c = Stopsignal(sig)
+		return nil
+
+	case "!!int":
+		var x int
+		if err := n.Decode(&x); err != nil {
+			return fmt.Errorf("line %d: stopsignal: %w", n.Line, err)
+		}
+		for _, v := range availableSignal {
+			if syscall.Signal(x) == v {
+				*c = Stopsignal(x)
+				return nil
+			}
+		}
+		return fmt.Errorf("line %d: unsupported stopsignal: %d", n.Line, x)
+	default:
+		return fmt.Errorf("line %d: stopsignal must be a signal name or number", n.Line)
+	}
+}
+
 type Program struct {
 	Cmd           string            `yaml:"cmd"`
 	Numprocs      int               `yaml:"numprocs"`
@@ -68,7 +116,7 @@ type Program struct {
 	Exitcodes     ExitCodes         `yaml:"exitcodes"`
 	Starttretries int               `yaml:"starttretries"`
 	Starttime     int               `yaml:"starttime"`
-	Stopsignal    string            `yaml:"stopsignal"`
+	Stopsignal    Stopsignal        `yaml:"stopsignal"`
 	Stoptime      int               `yaml:"stoptime"`
 	Stdout        string            `yaml:"stdout"`
 	Stderr        string            `yaml:"stderr"`
@@ -101,7 +149,7 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 		Exitcodes:     ExitCodes{0},
 		Starttime:     1,
 		Starttretries: 3,
-		Stopsignal:    "TERM",
+		Stopsignal:    Stopsignal(syscall.SIGTERM),
 		Stoptime:      10,
 	}
 	if err := n.Decode(&p); err != nil {
