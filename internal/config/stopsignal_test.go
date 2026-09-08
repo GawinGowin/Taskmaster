@@ -107,8 +107,23 @@ func TestStopsignal_UnmarshalYAML(t *testing.T) {
 			errContains: `unknown stopsignal "SEGV"`},
 		{name: "前後の空白は落とさない", yaml: `"TERM "`, wantErr: true,
 			errContains: `unknown stopsignal "TERM "`},
+		// !!str / !!int 以外のスカラーは形としては正しい（スカラーである）ので、
+		// 形のエラーではなく値のエラーにする。タグ解決は利用者に見えない実装詳細で、
+		// NOPE(!!str) と true(!!bool) は書いた人にとってどちらも「単語を1つ書いた」だけ。
+		// default では n.Value（生テキスト）をそのまま出せる（実測）。
 		{name: "真偽値に見えるスカラーはエラー", yaml: "true", wantErr: true,
 			errContains: `unknown stopsignal "true"`},
+		{name: "false も同じ経路", yaml: "false", wantErr: true,
+			errContains: `unknown stopsignal "false"`},
+		{name: "小数は !!float になる", yaml: "1.5", wantErr: true,
+			errContains: `unknown stopsignal "1.5"`},
+		{name: "日付に見えるスカラーは !!timestamp になる", yaml: "2026-09-09", wantErr: true,
+			errContains: `unknown stopsignal "2026-09-09"`},
+		// yaml.v3 は YAML 1.2 のコアスキーマに従うので ON/NO/yes/off は !!bool にならず
+		// !!str のまま（実測）。umask が YAML 1.1 の「先頭ゼロ = 8 進」を引きずっているのとは
+		// 対照的で、同じパーサでも 1.1 の遺産が残っている箇所とそうでない箇所がある。
+		{name: "ON は真偽値ではなく文字列として扱われる", yaml: "ON", wantErr: true,
+			errContains: `unknown stopsignal "ON"`},
 		// エラーには剥がした後ではなく利用者が書いた元の文字列を出す（ADR-016 追記2）。
 		// SIGNOPE と書いたのに NOPE を指摘されると、書いていないものを指摘されることになる。
 		// ルックアップ用の変数とメッセージ用の元文字列を分ければよい。

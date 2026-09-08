@@ -74,7 +74,7 @@ var availableSignal = map[string]syscall.Signal{
 
 func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind != yaml.ScalarNode {
-		return fmt.Errorf("line %d: stopsignal must be a signal name", n.Line)
+		return fmt.Errorf("line %d: stopsignal must be a signal name or number", n.Line)
 	}
 	switch n.Tag {
 	case "!!str":
@@ -102,7 +102,10 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 		}
 		return fmt.Errorf("line %d: unsupported stopsignal: %d", n.Line, x)
 	default:
-		return fmt.Errorf("line %d: stopsignal must be a signal name or number", n.Line)
+		// !!bool / !!float / !!timestamp など。形はスカラーで正しいので、
+		// 値のエラーとして扱う。タグ解決は利用者に見えない実装詳細なので、
+		// NOPE(!!str) と true(!!bool) で文言が変わるべきではない。
+		return fmt.Errorf("line %d: unknown stopsignal %q", n.Line, n.Value)
 	}
 }
 
