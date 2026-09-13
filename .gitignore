@@ -13,5 +13,10 @@
 # Editor
 .vscode/settings.json
 
-# documents-hub の sparse-checkout（別リポジトリなのでここでは追跡しない）
 /docs/
+
+go.work
+go.work.sum
+
+# 作業メモ（P1 の手順書。個人用）
+/TODO.md
