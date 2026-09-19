@@ -9,16 +9,22 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-func LoadFrom(r io.Reader, name string) (*Config, error) {
-	var cfg Config
+func LoadFrom(r io.Reader, name string) (_ *Config, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%s: %w", name, err)
+		}
+	}()
 
+	var cfg Config
 	d := yaml.NewDecoder(r)
 	d.KnownFields(true)
-	if err := d.Decode(&cfg); err != nil {
+	err = d.Decode(&cfg)
+	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("%s: %s", name, "config file is empty")
+			err = errors.New("config file is empty")
 		}
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, err
 	}
 	return &cfg, nil
 }
