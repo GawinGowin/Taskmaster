@@ -16,9 +16,9 @@ func LoadFrom(r io.Reader, name string) (_ *Config, err error) {
 		}
 	}()
 
-	var cfg Config
+	var cfg *Config
 	d := yaml.NewDecoder(r)
-	d.KnownFields(true)
+	d.KnownFields(true) // 未知のフィールドでエラー
 	err = d.Decode(&cfg)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -26,11 +26,17 @@ func LoadFrom(r io.Reader, name string) (_ *Config, err error) {
 		}
 		return nil, err
 	}
+	if cfg == nil {
+		return nil, errors.New("config file is empty")
+	}
 	var extra yaml.Node // "---" 区切りの複数 yaml の存在確認のため
 	if err = d.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("line %d: config file has multiple YAML documents", extra.Line)
+		if extra.Line > 0 {
+			return nil, fmt.Errorf("line %d: config file has multiple YAML documents", extra.Line)
+		}
+		return nil, errors.New("config file has multiple YAML documents")
 	}
-	return &cfg, nil
+	return cfg, nil
 }
 
 func Load(path string) (*Config, error) {
