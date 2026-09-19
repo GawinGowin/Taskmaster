@@ -25,13 +25,12 @@ var autorestartNames = map[string]Autorestart{
 }
 
 func (c *Autorestart) UnmarshalYAML(n *yaml.Node) error {
-	var s string
-	if err := n.Decode(&s); err != nil {
-		return err
+	if n.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: autorestart must be always, never, or unexpected", n.Line)
 	}
-	v, ok := autorestartNames[s]
+	v, ok := autorestartNames[n.Value]
 	if !ok {
-		return fmt.Errorf("line %d: unknown autorestart %q", n.Line, s)
+		return fmt.Errorf("line %d: unknown autorestart %q", n.Line, n.Value)
 	}
 	*c = v
 	return nil
@@ -41,9 +40,16 @@ type ExitCodes []int
 
 func (c *ExitCodes) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.SequenceNode {
-		var xs []int
-		if err := n.Decode(&xs); err != nil {
-			return fmt.Errorf("line %d: exitcodes: %w", n.Line, err)
+		xs := make([]int, 0, len(n.Content))
+		for _, e := range n.Content {
+			if e.Kind != yaml.ScalarNode {
+				return fmt.Errorf("line %d: exitcodes: list elements must be ints", e.Line)
+			}
+			var x int
+			if err := e.Decode(&x); err != nil {
+				return fmt.Errorf("line %d: exitcodes: %q is not an int", e.Line, e.Value)
+			}
+			xs = append(xs, x)
 		}
 		*c = xs
 		return nil
@@ -54,7 +60,7 @@ func (c *ExitCodes) UnmarshalYAML(n *yaml.Node) error {
 	}
 	var x int
 	if err := n.Decode(&x); err != nil {
-		return fmt.Errorf("line %d: exitcodes: %w", n.Line, err)
+		return fmt.Errorf("line %d: exitcodes: %q is not an int", n.Line, n.Value)
 	}
 	*c = ExitCodes{x}
 	return nil
@@ -78,13 +84,9 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 	}
 	switch n.Tag {
 	case "!!str":
-		var s string
-		if err := n.Decode(&s); err != nil {
-			return fmt.Errorf("line %d: stopsignal: %w", n.Line, err)
-		}
-		sig, ok := availableSignal[strings.TrimPrefix(s, "SIG")]
+		sig, ok := availableSignal[strings.TrimPrefix(n.Value, "SIG")]
 		if !ok {
-			return fmt.Errorf("line %d: unknown stopsignal %q", n.Line, s)
+			return fmt.Errorf("line %d: unknown stopsignal %q", n.Line, n.Value)
 		}
 		*c = Stopsignal(sig)
 		return nil
@@ -92,7 +94,7 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 	case "!!int":
 		var x int
 		if err := n.Decode(&x); err != nil {
-			return fmt.Errorf("line %d: stopsignal: %w", n.Line, err)
+			return fmt.Errorf("line %d: unsupported stopsignal: %s", n.Line, n.Value)
 		}
 		for _, v := range availableSignal {
 			if syscall.Signal(x) == v {
