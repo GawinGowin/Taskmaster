@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"sort"
 	"strings"
 	"taskmaster/internal/config"
 	"testing"
@@ -91,6 +92,20 @@ func TestLoadFrom(t *testing.T) {
 				}
 				if c.Programs["minimal"].Cmd != "/bin/true" {
 					t.Errorf("cmd = %q", c.Programs["minimal"].Cmd)
+				}
+			},
+		},
+		{
+			// 狙い: 先頭の --- は単一ドキュメントのまま。
+			// 複数ドキュメント検出を「--- の有無」で書くと、この正常なファイルを誤って弾く。
+			name:     "先頭の --- は 2 つ目のドキュメントを作らない",
+			yamlFile: "edge_leading_document_separator",
+			check: func(t *testing.T, c *config.Config) {
+				if len(c.Programs) != 1 {
+					t.Fatalf("programs = %d 件, want 1", len(c.Programs))
+				}
+				if c.Programs["p"].Cmd != "/bin/true" {
+					t.Errorf("cmd = %q", c.Programs["p"].Cmd)
 				}
 			},
 		},
@@ -206,4 +221,100 @@ func TestLoad_MissingFile(t *testing.T) {
 	if !strings.Contains(err.Error(), p) {
 		t.Errorf("エラーにパスが含まれていない: %v", err)
 	}
+}
+
+// --- ドキュメントの個数 ------------------------------------------------------
+//
+// Decoder は「YAML ドキュメントが何個あるか」を 2 つの形でしか外に出さない。
+//
+//	0 個      -> 1 回目の Decode が io.EOF
+//	2 個以上  -> 2 回目の Decode が io.EOF 以外を返す
+//
+// どちらも放っておくと利用者に伝わらない。前者は `error: EOF` という
+// 実装都合の 1 行になり、後者は**黙って先頭だけ読まれる**
+// （起動するのに設定が効かない、という最悪の壊れ方）。
+
+// TestLoadFrom_EmptyConfig は TODO §3（io.EOF の意訳）。
+// 文面は固定しない。契約は「io.EOF という Decoder の実装都合を利用者に見せないこと」だけ。
+func TestLoadFrom_EmptyConfig(t *testing.T) {
+	for _, name := range []string{"edge_empty_file", "edge_comment_only"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadFile(t, name)
+			logErr(t, err)
+			if err == nil {
+				t.Fatal("空の設定がエラーにならなかった")
+			}
+			if strings.Contains(err.Error(), "EOF") {
+				t.Errorf("EOF が利用者に漏れている（意訳されていない）: %v", err)
+			}
+			if !strings.Contains(err.Error(), name) {
+				t.Errorf("エラーに設定ファイル名が含まれていない: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadFrom_MultipleDocuments は「2 つ目以降を黙って捨てない」こと。
+// 黙って捨てた場合にそれが分かるよう、成功してしまったときは
+// どのドキュメントが勝ったかを出す。
+func TestLoadFrom_MultipleDocuments(t *testing.T) {
+	tests := []struct {
+		name     string
+		yamlFile string
+		wantErr  bool
+	}{
+		{
+			name:     "--- で区切られた 2 つ目を黙って捨てない",
+			yamlFile: "invalid_multiple_documents",
+			wantErr:  true,
+		},
+		{
+			// 末尾の --- は「空の 2 つ目」になる。
+			// 案 A（ドキュメントは 1 つだけ）ならエラー、案 B（空なら許す）なら成功。
+			// いまは A を前提に書いている。B を採るならここを wantErr: false にし、
+			// Programs に p が 1 件あることを確かめる形へ変える。
+			name:     "末尾の --- も 2 つ目のドキュメントとして数える（案 A）",
+			yamlFile: "edge_trailing_document_separator",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := loadFile(t, tt.yamlFile)
+			logErr(t, err)
+			if (err != nil) != tt.wantErr {
+				if err == nil {
+					names := make([]string, 0, len(got.Programs))
+					for k := range got.Programs {
+						names = append(names, k)
+					}
+					sort.Strings(names)
+					t.Fatalf("エラーにならず読めてしまった。採用された program = %v", names)
+				}
+				t.Fatalf("err = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestLoadFrom_OnlyDocumentSeparator は --- だけのファイル。
+//
+// 「空のドキュメントが 1 個」なので、ドキュメント数の検査（2 個以上を弾く）は通過し、
+// io.EOF にもならないので「設定が空」の意訳にも引っかからない。**両方の網の隙間**にある。
+//
+// デコード結果は edge_programs_null.yaml（programs: に値を書かない）と同じ Config なので、
+// エラーにするかどうかは TODO §6「programs 空を許すか」と同じ判断になる。
+// ここでは現状（成功して Programs == nil）を記録するにとどめる。
+// §6 を決めたらこのテストを期待値ごと書き換える。
+func TestLoadFrom_OnlyDocumentSeparator(t *testing.T) {
+	got, err := loadFile(t, "edge_only_document_separator")
+	logErr(t, err)
+	if err != nil {
+		t.Fatalf("いまはエラーにならない想定（§6 を決めて変えたならこのテストを更新する）: %v", err)
+	}
+	if got.Programs != nil {
+		t.Errorf("Programs = %#v, want nil", got.Programs)
+	}
+	t.Log("空ファイルは config file is empty で落ちるのに、--- だけは通る（§6 で扱いを決める）")
 }

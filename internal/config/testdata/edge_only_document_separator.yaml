@@ -1,0 +1,9 @@
+# 期待: 【未決。いまは成功 / Programs == nil】
+# 狙い: --- だけのファイルは「空のドキュメントが 1 個」になる（実測: 1 回目が
+#   err=nil で中身が空、2 回目が io.EOF）。**io.EOF にならない**ので、
+#   edge_empty_file.yaml の "config file is empty" の判定をすり抜ける。
+#   利用者から見れば「設定を全部消した」で空ファイルと同じなのに、
+#   通る経路が違うせいで結果が変わる。
+#   ただしデコード結果は edge_programs_null.yaml（programs: と書いて値を書かない）と
+#   同一なので、扱いは TODO §6「programs 空を許すか」と一緒に決めるべきもの
+---

@@ -1,0 +1,13 @@
+# 期待: エラー "複数の YAML ドキュメント" 相当
+# 狙い: Decoder.Decode は 1 回で先頭ドキュメントしか読まない。何もしないと
+#   2 つ目が黙って捨てられ、first だけが起動して second は存在しないまま
+#   正常終了する（起動するのに設定が効かない）。設定を連結した事故
+#   （cat a.yaml b.yaml > c.yaml）がこの形になる。
+#   検出は 2 回目の Decode が io.EOF を返すかで判定できる
+programs:
+  first:
+    cmd: /bin/true
+---
+programs:
+  second:
+    cmd: /bin/false
