@@ -114,8 +114,6 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 
 type EnvString string
 
-var missing string
-
 func (s *EnvString) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind != yaml.ScalarNode {
 		return fmt.Errorf("line %d: must be a string", n.Line)
@@ -126,6 +124,7 @@ func (s *EnvString) UnmarshalYAML(n *yaml.Node) error {
 	if i := strings.Index(n.Value, "${"); i >= 0 && !strings.Contains(n.Value[i:], "}") {
 		return fmt.Errorf("line %d: unclosed ${ in %q", n.Line, n.Value)
 	}
+	var missing string
 	out := os.Expand(n.Value, func(k string) string {
 		if k == "$" {
 			return "$"
