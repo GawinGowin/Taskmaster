@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"taskmaster/internal/config"
-
-	yaml "gopkg.in/yaml.v3"
 )
 
 var (
@@ -57,23 +55,10 @@ func run() error {
 		return &usageError{fmt.Sprintf("unexpected argument: %q", flag.Arg(0))}
 	}
 
-	f, err := os.Open(*cfgPath)
+	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	var m config.Config
-
-	d := yaml.NewDecoder(f)
-	d.KnownFields(true)
-	if err := d.Decode(&m); err != nil {
-		return fmt.Errorf("%s: %w", *cfgPath, err)
-	}
-
-	ret, err := yaml.Marshal(m)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s\n", string(ret))
+	fmt.Printf("%v", cfg)
 	return nil
 }
