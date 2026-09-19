@@ -1,0 +1,11 @@
+# 期待: 【TM_ROOT が定義されていれば】成功。cmd と workingdir が展開される
+#   TM_ROOT=/opt/tm のとき cmd = "/opt/tm/scripts/test.sh" / workingdir = "/opt/tm"
+#   env の値は展開せず "${TM_ROOT}" のまま（展開対象はパスの 2 フィールドだけ）
+# 狙い: 展開するフィールドとしないフィールドの境界を 1 ファイルで見る。
+#   TM_ROOT を未設定にすれば、同じファイルが未定義エラーのケースにもなる
+programs:
+  p:
+    cmd: "${TM_ROOT}/scripts/test.sh"
+    workingdir: "${TM_ROOT}"
+    env:
+      LITERAL: "${TM_ROOT}"
