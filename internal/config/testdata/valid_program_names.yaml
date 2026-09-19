@@ -1,0 +1,18 @@
+# 期待: 成功 / 6 件すべてが program として読める
+# 狙い: 許可する文字の見本。課題文 VII.1 の例（nginx / vogsphere）と、
+#   実際に書きたくなる形（ドット・ハイフン・アンダースコア・大文字・数字始まり）を並べる。
+#   名前は ADR で決めたビュー書式 name:index/pid に同じ形で出るので、
+#   : と / と空白だけが困る。それ以外は通ってよい
+programs:
+  nginx:
+    cmd: /bin/true
+  vogsphere:
+    cmd: /bin/true
+  web.1:
+    cmd: /bin/true
+  my-app:
+    cmd: /bin/true
+  _internal:
+    cmd: /bin/true
+  App2:
+    cmd: /bin/true
