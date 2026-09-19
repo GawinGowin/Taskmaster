@@ -191,8 +191,23 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&p); err != nil {
 		return err
 	}
+	if p.Cmd == "" {
+		return fmt.Errorf("line %d: cmd is required", n.Line)
+	}
 	if p.Numprocs <= 0 {
 		return fmt.Errorf("line %d: numprocs must be >= 1, got %d", n.Line, p.Numprocs)
+	}
+	if p.Umask != nil && (*(p.Umask) < 0o000 || *(p.Umask) > 0o777) {
+		return fmt.Errorf("line %d: umask must be between 0o000 and 0o777, got %d (%O)", n.Line, *p.Umask, *p.Umask)
+	}
+	if p.Starttretries < 0 {
+		return fmt.Errorf("line %d: starttretries must be >= 0, got %d", n.Line, p.Starttretries)
+	}
+	if p.Starttime < 0 {
+		return fmt.Errorf("line %d: starttime must be >= 0, got %d", n.Line, p.Starttime)
+	}
+	if p.Stoptime < 0 {
+		return fmt.Errorf("line %d: stoptime must be >= 0, got %d", n.Line, p.Stoptime)
 	}
 	*s = Program(p)
 	return nil
