@@ -26,6 +26,10 @@ func LoadFrom(r io.Reader, name string) (_ *Config, err error) {
 		}
 		return nil, err
 	}
+	var extra yaml.Node // "---" 区切りの複数 yaml の存在確認のため
+	if err = d.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("line %d: config file has multiple YAML documents", extra.Line)
+	}
 	return &cfg, nil
 }
 
