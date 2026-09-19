@@ -1,6 +1,6 @@
 # 期待: 成功 / Stopsignal == syscall.SIGTERM
-# 狙い: ADR-016 の 2026-09-09 追記2 で決定2 を一部修正し、SIG 接頭辞を受けることにした。
-#   本家 datatypes.py:413-414 と同じ寛容さだが、理由は本家互換ではない。
+# 狙い: SIG 接頭辞つきの表記を受けること。
+#   本家 supervisord（datatypes.py:413-414）と同じ寛容さだが、理由は本家互換ではない。
 #   SIGTERM は signal(7) の正式名称であり、TERM のほうが supervisord/taskmaster 側の略記。
 #   OS の語彙をそのまま受け入れる、という整理で、autorestart の値
 #   （taskmaster が自分で定義した語彙）と非対称であることに理由がつく。

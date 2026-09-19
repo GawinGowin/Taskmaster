@@ -1,7 +1,6 @@
 # taskmasterd.yaml — scripts/test.sh を機能ごとの被験プロセスとして並べた動作確認用の設定。
-# 各プログラムが何を確かめるためのものかは
-# docs/subjects/Taskmaster/2_design/E-01-test-harness-and-scenarios.md
-# ${TM_ROOT} の展開は taskmasterd 側の仕事だが、まだ実装していない（M-1）。
+# 各プログラムが何を確かめるためのものかは、それぞれのコメントを参照。
+# ${TM_ROOT} の展開は taskmasterd 側の仕事だが、まだ実装していない。
 
 programs:
   # --- 基本 -----------------------------------------------------------------

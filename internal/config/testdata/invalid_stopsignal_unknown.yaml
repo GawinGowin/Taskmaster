@@ -1,6 +1,6 @@
 # 期待: エラー "line N: unknown stopsignal \"NOPE\""
-# 狙い: M-1 §2.1 で「素通りする」と書かれていた穴（stopsignal: NOPE）が
-#   塞がったことの確認。本家も設定読み込み時に弾く（datatypes.py:417）
+# 狙い: かつて素通りしていた穴（stopsignal: NOPE）が塞がったことの確認。
+#   本家 supervisord も設定読み込み時に弾く（datatypes.py:417）
 programs:
   p:
     cmd: /bin/true

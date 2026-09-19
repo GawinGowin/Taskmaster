@@ -1,0 +1,5 @@
+# 期待: エラー（空ファイルと同じ扱い）
+# 狙い: edge_only_document_separator.yaml と同じ「root が null のドキュメント」を
+#   区切り記号ではなく null リテラルで作った形。実測でどちらも同じ木になる
+#   （DocumentNode -> Scalar(tag !!null)）ので、同じエラーに落ちるのが筋
+null

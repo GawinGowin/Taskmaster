@@ -3,7 +3,7 @@
 #   Program.UnmarshalYAML が plain にセットした既定値 TERM がそのまま残る。
 #   つまり「stopsignal: と書いて値を忘れた」は黙って TERM になる。
 #   これをエラーにしたいなら Stopsignal 側では観測できず、Program 側で
-#   yaml.Node の Tag == "!!null" を見る二段構えが要る（M-1 §1 の実測メモと同じ話）
+#   yaml.Node の Tag == "!!null" を見る二段構えが要る
 programs:
   p:
     cmd: /bin/true
