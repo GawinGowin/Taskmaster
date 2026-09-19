@@ -49,7 +49,7 @@ func decodeConfigFile(t *testing.T, name string) (cfg config.Config, err error, 
 // taskmasterd がスタックトレースを吐いて死ぬ。エラーメッセージを出すべき場所で
 // panic するのは設定パーサとして最悪の壊れ方なので、ここで固定しておく。
 // strings.TrimPrefix(s, "SIG") なら「あれば剥がす / 無ければそのまま」を
-// 境界チェックなしで満たすので、if 自体が要らない（ADR-016 追記2）。
+// 境界チェックなしで満たすので、if 自体が要らない。
 func TestStopsignal_ShortValue(t *testing.T) {
 	// 短いうえに無効な値。panic せずエラーを返すのが正。
 	for _, src := range []string{`""`, "ab", "E", "S", "SI"} {
@@ -84,7 +84,7 @@ func TestStopsignal_UnmarshalYAML(t *testing.T) {
 		{name: "USR2", yaml: "USR2", want: config.Stopsignal(syscall.SIGUSR2)},
 		{name: "引用符で囲んでも同じ", yaml: `"TERM"`, want: config.Stopsignal(syscall.SIGTERM)},
 
-		// SIG 接頭辞は受ける / 大文字小文字は受けない（ADR-016 追記2 で決定2 を一部修正）。
+		// SIG 接頭辞は受ける / 大文字小文字は受けない。
 		// 根拠が違うので分けている。SIGTERM は signal(7) に載っている OS 側の正式名称で、
 		// TERM のほうが supervisord/taskmaster 側の略記。つまり接頭辞を受けるのは
 		// 表記ゆれの吸収ではなく OS の語彙の受け入れ。小文字にはその正当化が無い。
@@ -124,18 +124,18 @@ func TestStopsignal_UnmarshalYAML(t *testing.T) {
 		// 対照的で、同じパーサでも 1.1 の遺産が残っている箇所とそうでない箇所がある。
 		{name: "ON は真偽値ではなく文字列として扱われる", yaml: "ON", wantErr: true,
 			errContains: `unknown stopsignal "ON"`},
-		// エラーには剥がした後ではなく利用者が書いた元の文字列を出す（ADR-016 追記2）。
+		// エラーには剥がした後ではなく利用者が書いた元の文字列を出す。
 		// SIGNOPE と書いたのに NOPE を指摘されると、書いていないものを指摘されることになる。
 		// ルックアップ用の変数とメッセージ用の元文字列を分ければよい。
 		{name: "エラーには入力そのものが出る", yaml: "SIGNOPE", wantErr: true,
 			errContains: `unknown stopsignal "SIGNOPE"`},
 
-		// 数値表記（ADR-016 追記1 で決定1 を修正し、受けることにした）。
+		// 数値表記も受ける。
 		// 番号は Linux の値。GOOS を跨ぐなら固定できない。
 		{name: "15 は SIGTERM", yaml: "15", want: config.Stopsignal(syscall.SIGTERM)},
 		{name: "1 は SIGHUP", yaml: "1", want: config.Stopsignal(syscall.SIGHUP)},
 		{name: "9 は SIGKILL", yaml: "9", want: config.Stopsignal(syscall.SIGKILL)},
-		// 決定3（ホワイトリスト）は数値パスにこそ効く。範囲チェックにすると
+		// ホワイトリスト方式は数値パスにこそ効く。範囲チェックにすると
 		// 11(SEGV) が通ってしまい availableSignal が飾りになる。
 		{name: "ホワイトリスト外の番号はエラー", yaml: "11", wantErr: true,
 			errContains: "unsupported stopsignal: 11"},
@@ -151,7 +151,7 @@ func TestStopsignal_UnmarshalYAML(t *testing.T) {
 		{name: "引用符つきの数値は名前として扱われエラー", yaml: `"15"`, wantErr: true,
 			errContains: `unknown stopsignal "15"`},
 		// YAML 1.1 の「先頭ゼロ = 8 進」が残っているので 011 は 11 ではなく 9 になる。
-		// SIGSEGV のつもりが SIGKILL として通る。ADR-016 では未解決なので、
+		// SIGSEGV のつもりが SIGKILL として通る。扱いは未決なので、
 		// 「いまはこう読んでいる」を固定しておく（仕様を変えたらここが赤くなる）。
 		{name: "011 は 8 進で 9 = SIGKILL になる", yaml: "011", want: config.Stopsignal(syscall.SIGKILL)},
 
@@ -185,11 +185,12 @@ func TestStopsignal_UnmarshalYAML(t *testing.T) {
 	}
 }
 
-// TestStopsignal_NullLeavesZeroValue は ADR-016 の未解決の問い
-// 「Stopsignal のゼロ値が危険」の入口を固定する。
+// TestStopsignal_NullLeavesZeroValue は「Stopsignal のゼロ値が危険」という
+// 未解決の問題の入口を固定する。
 //
-// 実測: yaml.v3 は null ノードを短絡して Unmarshaler を呼ばない。ADR-016 が書いている
-// 「null は "" にデコードされて最終的に map 引きで落ちる」は起きず、値は触られないまま残る。
+// 実測: yaml.v3 は null ノードを短絡して Unmarshaler を呼ばない。
+// 「null は "" にデコードされ、最終的に map 引きで落ちる」と予想していたがそうはならず、
+// 値は触られないまま残る。
 // つまりゼロ値の Stopsignal に null を入れると 0 のまま通る。syscall.Signal(0) は
 // kill(2) では「シグナルを送らず存在確認だけ」なので、停止処理に流れるとエラーも出ずに
 // プロセスが止まらない。Program 経由なら既定値 TERM が残るので実害は無い（下の表で確認）が、
@@ -253,11 +254,11 @@ func TestProgram_Stopsignal(t *testing.T) {
 		{name: "USR2", yamlFile: "valid_stopsignal_names", program: "usr2",
 			want: config.Stopsignal(syscall.SIGUSR2)},
 
-		// SIG 接頭辞は受ける（ADR-016 追記2。testdata のコメント参照）
+		// SIG 接頭辞は受ける（testdata のコメント参照）
 		{name: "SIG 接頭辞つきも通る", yamlFile: "valid_stopsignal_sig_prefix", program: "p",
 			want: config.Stopsignal(syscall.SIGTERM)},
 
-		// 数値表記（ADR-016 追記1）
+		// 数値表記
 		{name: "数値の 15 は SIGTERM", yamlFile: "valid_stopsignal_numeric", program: "term",
 			want: config.Stopsignal(syscall.SIGTERM)},
 		{name: "数値の 1 は SIGHUP", yamlFile: "valid_stopsignal_numeric", program: "hup",
@@ -270,7 +271,7 @@ func TestProgram_Stopsignal(t *testing.T) {
 		{name: "stopsignal: （値なし）は既定の TERM のまま通る", yamlFile: "edge_stopsignal_null", program: "p",
 			want: config.Stopsignal(syscall.SIGTERM)},
 
-		// エッジ: 8 進の罠。011 は 11(SEGV) ではなく 9(KILL) になる（ADR-016 では未解決）
+		// エッジ: 8 進の罠。011 は 11(SEGV) ではなく 9(KILL) になる（扱いは未決）
 		{name: "011 は 8 進で 9 = SIGKILL になる", yamlFile: "edge_stopsignal_octal", program: "p",
 			want: config.Stopsignal(syscall.SIGKILL)},
 

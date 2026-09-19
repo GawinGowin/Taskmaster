@@ -10,13 +10,13 @@ import (
 	"testing"
 )
 
-// このファイルは TODO §1（internal/config/load.go を作る）の受け入れテスト。
+// このファイルは設定の入口（Load / LoadFrom）の受け入れテスト。
 // 狙いは「設定の読み方を知っているのは config パッケージだけ」という状態を固定すること。
 // したがって、ここでは yaml パッケージを import しない。
 // import した時点で「テストが本番と違う経路を検証している」状態に戻る。
 //
 // エラーの本文は t.Logf で全ケース出す（`go test -v` で見える）。
-// ADR-016 で「不明な値は黙って通さずエラーにする」と決めた以上、
+// 「不明な値は黙って通さずエラーにする」方針を採っている以上、
 // 出たエラーが利用者に読めるかどうかは合否と同じくらい見る価値がある。
 // 見るときは:  go test -v ./internal/config/
 
@@ -46,7 +46,7 @@ func loadFile(t *testing.T, name string) (*config.Config, error) {
 	return config.LoadFrom(f, p)
 }
 
-// TestLoadFrom_TopLevelUnknownField は §1 の中心。
+// TestLoadFrom_TopLevelUnknownField は入口を 1 本にする動機そのもの。
 // トップレベルの未知キーは Decoder.KnownFields(true) を立てたときだけエラーになる、
 // つまり「呼び出し側が正しく組み立てたか」に依存する唯一の検査だった。
 // LoadFrom の中に閉じた以降は、入口を通ったかどうかだけで決まる。
@@ -151,7 +151,7 @@ func TestLoadFrom(t *testing.T) {
 		},
 		{
 			// 狙い: program 内の未知キー検出（programFields）は型の中にあるので
-			// 入口を変えても効き続けること。§1 で壊していないことの確認。
+			// 入口を変えても効き続けること。差し替えで壊していないことの確認。
 			name:     "program 内の未知キーはエラー",
 			yamlFile: "edge_unknown_field_in_program",
 			wantErr:  true,
@@ -233,11 +233,20 @@ func TestLoad_MissingFile(t *testing.T) {
 // どちらも放っておくと利用者に伝わらない。前者は `error: EOF` という
 // 実装都合の 1 行になり、後者は**黙って先頭だけ読まれる**
 // （起動するのに設定が効かない、という最悪の壊れ方）。
+//
+// さらに「ドキュメントは 1 個あるが中身が null」（--- だけ / null）は
+// どちらの網にも掛からない。利用者から見れば空ファイルと同じなので、同じエラーに落とす。
 
-// TestLoadFrom_EmptyConfig は TODO §3（io.EOF の意訳）。
+// TestLoadFrom_EmptyConfig は io.EOF の意訳。
 // 文面は固定しない。契約は「io.EOF という Decoder の実装都合を利用者に見せないこと」だけ。
 func TestLoadFrom_EmptyConfig(t *testing.T) {
-	for _, name := range []string{"edge_empty_file", "edge_comment_only"} {
+	files := []string{
+		"edge_empty_file",              // 0 バイト
+		"edge_comment_only",            // コメントだけ
+		"edge_only_document_separator", // --- だけ（root が null のドキュメント 1 個）
+		"edge_null_document",           // null と書いたファイル（同上）
+	}
+	for _, name := range files {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadFile(t, name)
 			logErr(t, err)
@@ -296,25 +305,4 @@ func TestLoadFrom_MultipleDocuments(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestLoadFrom_OnlyDocumentSeparator は --- だけのファイル。
-//
-// 「空のドキュメントが 1 個」なので、ドキュメント数の検査（2 個以上を弾く）は通過し、
-// io.EOF にもならないので「設定が空」の意訳にも引っかからない。**両方の網の隙間**にある。
-//
-// デコード結果は edge_programs_null.yaml（programs: に値を書かない）と同じ Config なので、
-// エラーにするかどうかは TODO §6「programs 空を許すか」と同じ判断になる。
-// ここでは現状（成功して Programs == nil）を記録するにとどめる。
-// §6 を決めたらこのテストを期待値ごと書き換える。
-func TestLoadFrom_OnlyDocumentSeparator(t *testing.T) {
-	got, err := loadFile(t, "edge_only_document_separator")
-	logErr(t, err)
-	if err != nil {
-		t.Fatalf("いまはエラーにならない想定（§6 を決めて変えたならこのテストを更新する）: %v", err)
-	}
-	if got.Programs != nil {
-		t.Errorf("Programs = %#v, want nil", got.Programs)
-	}
-	t.Log("空ファイルは config file is empty で落ちるのに、--- だけは通る（§6 で扱いを決める）")
 }
