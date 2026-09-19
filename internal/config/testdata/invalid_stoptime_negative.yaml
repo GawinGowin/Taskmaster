@@ -1,0 +1,6 @@
+# 期待: エラー "line N: stoptime must be >= 0, got -1"
+# 狙い: 負の秒数。0 は許す（TERM を送って即 KILL する設定として意味がある）
+programs:
+  p:
+    cmd: /bin/true
+    stoptime: -1

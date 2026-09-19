@@ -1,0 +1,7 @@
+# 期待: エラー "line N: umask must be between 0o000 and 0o777, got 512 (0o1000)"
+# 狙い: 8 進で書かれた範囲外の値。invalid_umask_out_of_range.yaml と対にして、
+#   どちらの書き方でも「自分が打った数」が文面に現れることを確かめる
+programs:
+  p:
+    cmd: /bin/true
+    umask: 0o1000

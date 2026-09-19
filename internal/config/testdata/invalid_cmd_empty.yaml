@@ -1,0 +1,5 @@
+# 期待: エラー "line N: cmd is required"
+# 狙い: 書いたが空。未指定と同じ文面にしてある（利用者の行動はどちらも「cmd を書く」）
+programs:
+  p:
+    cmd: ""

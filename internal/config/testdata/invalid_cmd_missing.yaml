@@ -1,0 +1,9 @@
+# 期待: エラー "line N: cmd is required"
+# 狙い: cmd を書き忘れた program。監視を始めてから exec に失敗して初めて分かる、
+#   では遅い。なお行番号は program 名の行ではなく**最初のキーの行**を指す
+#   （program の mapping ノードの Line がそこなので、Program.UnmarshalYAML からは
+#   自分のキー名も名前の行も見えない）
+programs:
+  p:
+    numprocs: 2
+    workingdir: /tmp

@@ -1,0 +1,7 @@
+# 期待: エラー "line N: starttime must be >= 0, got -5"
+# 狙い: 負の秒数。0 は許す（起動した瞬間に RUNNING とみなす設定として意味がある）ので、
+#   「0 以上」であって「1 以上」ではない
+programs:
+  p:
+    cmd: /bin/true
+    starttime: -5
