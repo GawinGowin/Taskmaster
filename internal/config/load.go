@@ -1,22 +1,26 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
-	"fmt"
 
 	yaml "gopkg.in/yaml.v3"
 )
 
 func LoadFrom(r io.Reader, name string) (*Config, error) {
-	var m Config
+	var cfg Config
 
 	d := yaml.NewDecoder(r)
 	d.KnownFields(true)
-	if err := d.Decode(&m); err != nil {
-		return nil,  fmt.Errorf("%s: %w", name, err)
+	if err := d.Decode(&cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s: %s", name, "config file is empty")
+		}
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	return &m, nil
+	return &cfg, nil
 }
 
 func Load(path string) (*Config, error) {
