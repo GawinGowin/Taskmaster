@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"syscall"
 
@@ -111,11 +112,42 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 	}
 }
 
+type EnvString string
+
+var missing string
+
+func (s *EnvString) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: must be a string", n.Line)
+	}
+	if strings.Contains(n.Value, "${}") {
+		return fmt.Errorf("line %d: empty variable name in %q", n.Line, n.Value)
+	}
+	if i := strings.Index(n.Value, "${"); i >= 0 && !strings.Contains(n.Value[i:], "}") {
+		return fmt.Errorf("line %d: unclosed ${ in %q", n.Line, n.Value)
+	}
+	out := os.Expand(n.Value, func(k string) string {
+		if k == "$" {
+			return "$"
+		}
+		v, ok := os.LookupEnv(k)
+		if !ok && missing == "" {
+			missing = k
+		}
+		return v
+	})
+	if missing != "" {
+		return fmt.Errorf("line %d: undefined variable %q", n.Line, missing)
+	}
+	*s = EnvString(out)
+	return nil
+}
+
 type Program struct {
-	Cmd           string            `yaml:"cmd"`
+	Cmd           EnvString         `yaml:"cmd"`
 	Numprocs      int               `yaml:"numprocs"`
 	Umask         *int              `yaml:"umask"`
-	Workingdir    string            `yaml:"workingdir"`
+	Workingdir    EnvString         `yaml:"workingdir"`
 	Autostart     bool              `yaml:"autostart"`
 	Autorestart   Autorestart       `yaml:"autorestart"`
 	Exitcodes     ExitCodes         `yaml:"exitcodes"`
@@ -123,8 +155,8 @@ type Program struct {
 	Starttime     int               `yaml:"starttime"`
 	Stopsignal    Stopsignal        `yaml:"stopsignal"`
 	Stoptime      int               `yaml:"stoptime"`
-	Stdout        string            `yaml:"stdout"`
-	Stderr        string            `yaml:"stderr"`
+	Stdout        EnvString         `yaml:"stdout"`
+	Stderr        EnvString         `yaml:"stderr"`
 	Env           map[string]string `yaml:"env"`
 }
 
