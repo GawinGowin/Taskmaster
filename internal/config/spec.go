@@ -142,8 +142,44 @@ func (s *EnvString) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+type EnvStringList []string
+
+func (s *EnvStringList) UnmarshalYAML(n *yaml.Node) error {
+	cmds := make([]string, 0)
+	switch n.Kind {
+	case yaml.ScalarNode:
+		if i := strings.IndexAny(n.Value, "'\"\\"); i >= 0 {
+			m := `line %d: cmd: invalid character %q is not interpreted;
+"write the command as a list instead: cmd: [\"/bin/echo\", \"hello world\"]`
+			return fmt.Errorf(m, n.Line, n.Value[i])
+		}
+		var es EnvString
+		if err := n.Decode(&es); err != nil {
+			return err
+		}
+		cmds = append(cmds, strings.Fields(string(es))...)
+
+	// Sequence の場合、空白を含む環境変数を扱う手段がなくなるから ` ` 区切りでの分割はしない
+	case yaml.SequenceNode:
+		for _, e := range n.Content {
+			if e.Kind != yaml.ScalarNode {
+				return fmt.Errorf("line %d: exitcodes: list elements must be string", e.Line)
+			}
+			var es EnvString
+			if err := e.Decode(&es); err != nil {
+				return err
+			}
+			cmds = append(cmds, string(es))
+		}
+	default:
+		return fmt.Errorf("line %d: cmd must be a string or a list of strings", n.Line)
+	}
+	*s = EnvStringList(cmds)
+	return nil
+}
+
 type Program struct {
-	Cmd           EnvString         `yaml:"cmd"`
+	Cmd           EnvStringList     `yaml:"cmd"`
 	Numprocs      int               `yaml:"numprocs"`
 	Umask         *int              `yaml:"umask"`
 	Workingdir    EnvString         `yaml:"workingdir"`
@@ -191,7 +227,7 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&p); err != nil {
 		return err
 	}
-	if p.Cmd == "" {
+	if len(p.Cmd) == 0 {
 		return fmt.Errorf("line %d: cmd is required", n.Line)
 	}
 	if p.Numprocs <= 0 {

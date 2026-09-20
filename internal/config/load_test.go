@@ -87,7 +87,7 @@ func TestLoadFrom(t *testing.T) {
 				if len(c.Programs) != 1 {
 					t.Fatalf("programs = %d 件, want 1", len(c.Programs))
 				}
-				if c.Programs["minimal"].Cmd != "/bin/true" {
+				if c.Programs["minimal"].Cmd[0] != "/bin/true" {
 					t.Errorf("cmd = %q", c.Programs["minimal"].Cmd)
 				}
 			},
@@ -101,7 +101,7 @@ func TestLoadFrom(t *testing.T) {
 				if len(c.Programs) != 1 {
 					t.Fatalf("programs = %d 件, want 1", len(c.Programs))
 				}
-				if c.Programs["p"].Cmd != "/bin/true" {
+				if c.Programs["p"].Cmd[0] != "/bin/true" {
 					t.Errorf("cmd = %q", c.Programs["p"].Cmd)
 				}
 			},

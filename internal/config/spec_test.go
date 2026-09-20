@@ -49,7 +49,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 	// def はデフォルト値を返す。mutate に差分だけ書く（nil ならデフォルトのまま）。
 	def := func(mutate func(*config.Program)) config.Program {
 		p := config.Program{
-			Cmd:           "/bin/true",
+			Cmd:           config.EnvStringList{"/bin/true"},
 			Numprocs:      1,
 			Umask:         nil,
 			Workingdir:    "",
@@ -87,7 +87,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			name:     "全フィールド明示でデフォルトが全て上書きされる",
 			yamlFile: "valid_full", program: "full",
 			want: config.Program{
-				Cmd:           "/usr/bin/env sleep 60",
+				Cmd:           config.EnvStringList{"/usr/bin/env", "sleep", "60"},
 				Numprocs:      4,
 				Umask:         intPtr(63), // 0o077
 				Workingdir:    "/var/tmp",

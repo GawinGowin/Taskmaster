@@ -136,8 +136,8 @@ func TestProgram_EnvExpansion(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 		p := cfg.Programs["p"]
-		if string(p.Cmd) != "/opt/tm/scripts/test.sh" {
-			t.Errorf("cmd = %q", string(p.Cmd))
+		if string(p.Cmd[0]) != "/opt/tm/scripts/test.sh" {
+			t.Errorf("cmd = %q", string(p.Cmd[0]))
 		}
 		if string(p.Workingdir) != "/opt/tm" {
 			t.Errorf("workingdir = %q", string(p.Workingdir))
