@@ -6,8 +6,9 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${fileDirname}",
-      "args": ["-c", "${workspaceFolder}/configs/taskmasterd.yaml"]
+      "program": "${workspaceFolder}/cmd/taskmasterd/taskmasterd.go",
+      "args": ["-c", "${workspaceFolder}/configs/taskmasterd.yaml"],
+      "preLaunchTask": "go_build"
     }
   ]
 }
