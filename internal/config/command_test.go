@@ -209,20 +209,30 @@ func TestCommand_EmptyList(t *testing.T) {
 	}
 }
 
-// TestCommand_EmptyElement は空文字の要素を弾くことを見る。
+// TestCommand_EmptyElement は空文字の要素を弾くことを見る。位置は問わない。
 //
 // argv[0] が空だと exec.Command("") が "exec: no command" で失敗する。
+// それ以外の位置の空要素は exec には渡せてしまうが、YAML に空を書く意図はまず無く、
+// 変数の展開結果が空だった（＝定義されているが値が空）ときに黙って空引数が 1 つ増える。
 // 判定に外の世界を見る必要がなく設定ファイルの中だけで閉じているので、
 // [[ADR-017]] 決定2 の線引きでは config 側で落とす対象。
 // null 要素（`- ~`）も同じ経路に落ちる。yaml.v3 は null ノードで UnmarshalYAML を
 // 呼ばないため EnvString のゼロ値（空文字）が残り、書き手の意図と無関係に空引数になる。
 func TestCommand_EmptyElement(t *testing.T) {
+	t.Setenv("TM_EMPTY", "") // 定義されているが空
+
 	tests := []struct {
 		name string
 		yaml string
 	}{
 		{name: "argv[0] が空文字", yaml: `["", "/bin/echo"]`},
 		{name: "argv[0] が null", yaml: `[~, "/bin/echo"]`},
+		{name: "中間の要素が空文字", yaml: `["/bin/echo", "", "x"]`},
+		{name: "末尾の要素が空文字", yaml: `["/bin/echo", ""]`},
+		{name: "末尾の要素が null", yaml: `["/bin/echo", ~]`},
+		// 定義されているが値が空の変数。展開そのものは成功する（未定義とは別物）ので、
+		// 空要素の検査が無いと argv に空文字が 1 つ増えたことに誰も気づけない。
+		{name: "展開結果が空文字", yaml: `["/bin/echo", "${TM_EMPTY}"]`},
 	}
 
 	for _, tt := range tests {
