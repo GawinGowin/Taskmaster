@@ -2,7 +2,6 @@ package config_test
 
 import (
 	"os"
-	"path"
 	"reflect"
 	"sort"
 	"strings"
@@ -20,8 +19,6 @@ import (
 // 出たエラーが利用者に読めるかどうかは合否と同じくらい見る価値がある。
 // 見るときは:  go test -v ./internal/config/
 
-const testdataDir = "testdata"
-
 // logErr は実際のエラー本文をコンソールに出す。
 // アサーションではなく観察用。何を読むべきかを添える。
 func logErr(t *testing.T, err error) {
@@ -37,7 +34,7 @@ func logErr(t *testing.T, err error) {
 // name をそのままエラー表示用の名前としても渡す（本番の Load と同じ形）。
 func loadFile(t *testing.T, name string) (*config.Config, error) {
 	t.Helper()
-	p := path.Join(testdataDir, name+".yaml")
+	p := testdataPath(t, name)
 	f, err := os.Open(p)
 	if err != nil {
 		t.Fatalf("testdata %s: %v", name, err)
@@ -185,7 +182,7 @@ func TestLoadFrom(t *testing.T) {
 // ここが崩れると（Load 側だけに検証や展開が足されると）入口を 1 本にした意味が消え、
 // テストが通る経路と本番の経路が再び分かれる。
 func TestLoad_IsLoadFrom(t *testing.T) {
-	p := path.Join(testdataDir, "valid_multiple_programs.yaml")
+	p := testdataPath(t, "valid_multiple_programs")
 
 	viaLoad, err := config.Load(p)
 	if err != nil {

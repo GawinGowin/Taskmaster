@@ -2,7 +2,6 @@ package config_test
 
 import (
 	"os"
-	"path"
 	"strings"
 	"syscall"
 	"taskmaster/internal/config"
@@ -28,7 +27,7 @@ func decodeStopsignal(src string) (got config.Stopsignal, err error, panicked an
 // decodeConfigFile も同じ理由で panic を握る。
 func decodeConfigFile(t *testing.T, name string) (cfg config.Config, err error, panicked any) {
 	t.Helper()
-	f, ferr := os.Open(path.Join("testdata", name+".yaml"))
+	f, ferr := os.Open(testdataPath(t, name))
 	if ferr != nil {
 		t.Fatalf("testdata %s: %v", name, ferr)
 	}

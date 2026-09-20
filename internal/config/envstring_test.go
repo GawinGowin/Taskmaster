@@ -131,7 +131,7 @@ func TestProgram_EnvExpansion(t *testing.T) {
 	t.Run("TM_ROOT が定義されていれば cmd と workingdir が展開される", func(t *testing.T) {
 		t.Setenv("TM_ROOT", "/opt/tm")
 
-		cfg, err := config.Load("testdata/valid_env_expansion.yaml")
+		cfg, err := config.Load(testdataPath(t, "valid_env_expansion"))
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
@@ -151,7 +151,7 @@ func TestProgram_EnvExpansion(t *testing.T) {
 	t.Run("TM_ROOT が未設定なら読み込みに失敗する", func(t *testing.T) {
 		unsetEnv(t, "TM_ROOT")
 
-		_, err := config.Load("testdata/valid_env_expansion.yaml")
+		_, err := config.Load(testdataPath(t, "valid_env_expansion"))
 		logErr(t, err)
 		if err == nil {
 			t.Fatal("TM_ROOT が未設定なのに読めてしまった")

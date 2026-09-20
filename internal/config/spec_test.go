@@ -2,7 +2,6 @@ package config_test
 
 import (
 	"os"
-	"path"
 	"reflect"
 	"syscall"
 	"taskmaster/internal/config"
@@ -176,7 +175,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := os.Open(path.Join("testdata", tt.yamlFile+".yaml"))
+			f, err := os.Open(testdataPath(t, tt.yamlFile))
 			if err != nil {
 				t.Fatalf("testdata %s: %v", tt.yamlFile, err)
 			}
