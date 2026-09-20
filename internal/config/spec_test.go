@@ -49,7 +49,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 	// def はデフォルト値を返す。mutate に差分だけ書く（nil ならデフォルトのまま）。
 	def := func(mutate func(*config.Program)) config.Program {
 		p := config.Program{
-			Cmd:           config.EnvStringList{"/bin/true"},
+			Cmd:           config.Command{"/bin/true"},
 			Numprocs:      1,
 			Umask:         nil,
 			Workingdir:    "",
@@ -87,7 +87,7 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			name:     "全フィールド明示でデフォルトが全て上書きされる",
 			yamlFile: "valid_full", program: "full",
 			want: config.Program{
-				Cmd:           config.EnvStringList{"/usr/bin/env", "sleep", "60"},
+				Cmd:           config.Command{"/usr/bin/env", "sleep", "60"},
 				Numprocs:      4,
 				Umask:         intPtr(63), // 0o077
 				Workingdir:    "/var/tmp",
@@ -172,6 +172,27 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 		{name: "YAML 構文エラー", yamlFile: "invalid_syntax", program: "p", wantErr: true},
 		{name: "タブインデントはエラー", yamlFile: "invalid_tab_indent", program: "p", wantErr: true},
 		{name: "program 内の未知キーはエラー", yamlFile: "edge_unknown_field_in_program", program: "p", want: def(nil), wantErr: true},
+
+		// cmd（文字列 | リストの両対応）
+		{
+			name:     "文字列の cmd は空白で argv に割れる（課題文 VII.1 の例）",
+			yamlFile: "valid_cmd_subject_example", program: "p",
+			want: def(func(p *config.Program) {
+				p.Cmd = config.Command{"/usr/local/bin/nginx", "-c", "/etc/nginx/test.conf"}
+			}),
+		},
+		{
+			name:     "リストの cmd は空白を含む要素を 1 引数として保つ",
+			yamlFile: "valid_cmd_list", program: "p",
+			want: def(func(p *config.Program) {
+				p.Cmd = config.Command{"/bin/echo", "hello world"}
+			}),
+		},
+		{name: "cmd に引用符があればエラー", yamlFile: "invalid_cmd_quoted", program: "p", wantErr: true},
+		{name: "cmd が空リストならエラー", yamlFile: "invalid_cmd_empty_list", program: "p", wantErr: true},
+		{name: "cmd の要素がリストならエラー", yamlFile: "invalid_cmd_nested_list", program: "p", wantErr: true},
+		{name: "cmd がマッピングならエラー", yamlFile: "invalid_cmd_mapping", program: "p", wantErr: true},
+		{name: "cmd の argv[0] が空文字ならエラー", yamlFile: "invalid_cmd_empty_element", program: "p", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

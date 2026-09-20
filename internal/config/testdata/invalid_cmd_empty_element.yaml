@@ -1,0 +1,6 @@
+# 期待: エラー。argv[0] が空だと exec.Command("") が "exec: no command" で落ちるので、
+#   設定を読んだ時点で止める（ADR-017 決定2「設定内で閉じる判定は config で落とす」）
+# 狙い: 空文字要素が素通りしないこと
+programs:
+  p:
+    cmd: ["", "/bin/echo"]

@@ -1,0 +1,5 @@
+# 期待: エラー "line N: cmd is required"
+# 狙い: cmd 未指定 / cmd: "" / cmd: [] の 3 つが同じ 1 本のエラーに集まること
+programs:
+  p:
+    cmd: []

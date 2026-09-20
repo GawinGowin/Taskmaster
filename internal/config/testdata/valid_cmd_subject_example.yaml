@@ -1,0 +1,6 @@
+# 期待: 成功。cmd = ["/usr/local/bin/nginx", "-c", "/etc/nginx/test.conf"]
+# 狙い: 課題文 VII.1 の例をそのまま通す。文字列形式を残した理由が「採点者が課題文の例を
+#   貼っても動くこと」なので、この 1 行が通らなくなったら両対応の前提が崩れている
+programs:
+  p:
+    cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"

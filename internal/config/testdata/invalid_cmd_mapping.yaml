@@ -1,0 +1,5 @@
+# 期待: エラー "line N: cmd must be a string or a list of strings"
+# 狙い: スカラーでもシーケンスでもない形（default 分岐）
+programs:
+  p:
+    cmd: {a: 1}
