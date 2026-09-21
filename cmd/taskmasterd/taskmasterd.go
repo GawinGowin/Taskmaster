@@ -5,7 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
+	"sync"
+
 	"taskmaster/internal/config"
+	"taskmaster/internal/process"
 )
 
 var (
@@ -60,5 +64,44 @@ func run() error {
 		return err
 	}
 	fmt.Printf("%v", cfg)
+
+	prog := &cfg.Programs
+	pl := make([]string, 0, len(*prog))
+	for k := range *prog {
+		pl = append(pl, k)
+	}
+	sort.Strings(pl)
+	var wg sync.WaitGroup
+	for _, name := range pl {
+		p := (*prog)[name]
+		var fout, ferr *os.File
+		fout, err = process.OpenRedirect(string(p.Stdout))
+		if err != nil {
+			return err
+		}
+		if p.Stderr == p.Stdout {
+			ferr = fout
+		} else {
+			ferr, err = process.OpenRedirect(string(p.Stdout))
+			if err != nil {
+				return err
+			}
+		}
+		if p.Autostart {
+			for i := 0; i < p.Numprocs; i++ {
+				proc, err := process.New(&p, name, i, fout, ferr)
+				if err != nil {
+					return err
+				}
+				if proc.Start() != nil {
+					break
+				}
+				wg.Go(func() {
+					proc.Wait()
+				})
+			}
+		}
+	}
+	wg.Wait()
 	return nil
 }
