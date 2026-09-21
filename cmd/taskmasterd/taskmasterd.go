@@ -63,43 +63,46 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%v", cfg)
-
-	prog := &cfg.Programs
-	pl := make([]string, 0, len(*prog))
-	for k := range *prog {
+	pl := make([]string, 0, len(cfg.Programs))
+	for k := range cfg.Programs {
 		pl = append(pl, k)
 	}
 	sort.Strings(pl)
 	var wg sync.WaitGroup
 	for _, name := range pl {
-		p := (*prog)[name]
+		p := cfg.Programs[name]
+		if !p.Autostart {
+			continue
+		}
 		var fout, ferr *os.File
 		fout, err = process.OpenRedirect(string(p.Stdout))
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			continue
 		}
 		if p.Stderr == p.Stdout {
 			ferr = fout
 		} else {
-			ferr, err = process.OpenRedirect(string(p.Stdout))
+			ferr, err = process.OpenRedirect(string(p.Stderr))
 			if err != nil {
-				return err
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				continue
 			}
 		}
-		if p.Autostart {
-			for i := 0; i < p.Numprocs; i++ {
-				proc, err := process.New(&p, name, i, fout, ferr)
-				if err != nil {
-					return err
-				}
-				if proc.Start() != nil {
-					break
-				}
-				wg.Go(func() {
-					proc.Wait()
-				})
+		for i := 0; i < p.Numprocs; i++ {
+			proc, err := process.New(&p, name, i, fout, ferr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				break
 			}
+			err = proc.Start()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %s: %v\n", proc.ID(), err)
+				break
+			}
+			wg.Go(func() {
+				proc.Wait()
+			})
 		}
 	}
 	wg.Wait()
