@@ -50,7 +50,7 @@ func (p *Process) Start() error {
 }
 
 // goroutine から呼び出される。
-// _ = cmd.Wait() のように呼び出す。
+// cmd.Wait() のエラーは捨てる。
 // 当該cmd の終了状態が error に入るためこれを失敗扱いしない。
 func (p *Process) Wait() (*os.ProcessState, error) {
 	err := p.cmd.Wait()
