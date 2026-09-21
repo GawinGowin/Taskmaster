@@ -1,0 +1,26 @@
+# ./_output/bin/taskmasterd -c configs/minimal.yaml
+programs:
+  hello:
+    cmd:
+      [
+        "/bin/sh",
+        "-c",
+        "for n in 1 2 3 4 5; do date +%T; date +%T 1>&2; sleep 1; done",
+      ]
+    stdout: ./logs/tm-hello.out
+    stderr: ./logs/tm-hello.err
+
+  quiet:
+    cmd: ["/bin/sh", "-c", "for n in 1 2 3 4 5; do echo noise; sleep 1; done"]
+
+  oneshot:
+    cmd: ["/bin/echo", "hello from oneshot"]
+    stdout: ./logs/tm-oneshot.out
+
+  fails:
+    cmd: ["/bin/sh", "-c", "exit 3"]
+
+  manual:
+    cmd: ["/bin/echo", "この行は出ない"]
+    autostart: false
+    stdout: ./logs/tm-manual.out

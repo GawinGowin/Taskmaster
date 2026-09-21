@@ -8,7 +8,8 @@
 *.prof
 
 # Runtime artifacts
-/logs/
+/logs/*
+!/logs/.gitkeep
 
 # Editor
 .vscode/settings.json
