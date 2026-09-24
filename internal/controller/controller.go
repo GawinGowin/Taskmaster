@@ -67,7 +67,6 @@ func (c *Controller) start(p *process.Process) {
 		return
 	}
 
-
 	go func() {
 		ps, err := wait()
 		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
@@ -132,7 +131,22 @@ func (c *Controller) Run() {
 				c.to(p, process.Stopped, "expected stop ("+how+")")
 
 			case process.Running:
+				restart := false
+				switch p.Spec().Autorestart {
+				case config.Never:
+					restart = false
+				case config.Unexpected:
+					restart = !ok
+				case config.Always:
+					restart = true
+				}
+				if c.shutdown {
+					restart = false
+				}
 				c.to(p, process.Exited, fmt.Sprintf("%s (expected=%v)", how, ok))
+				if restart {
+					c.start(p)
+				}
 			}
 			if c.shutdown {
 				return
