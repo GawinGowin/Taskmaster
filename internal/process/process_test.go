@@ -65,9 +65,9 @@ func TestNew_EmptyCmd(t *testing.T) {
 	}
 }
 
-// TestNew_WiresCmd は exec.Cmd の組み立てを見る。
+// TestBuildCmd_Wires は exec.Cmd の組み立てを見る。
 // Setpgid は M-6 の Kill(-pgid) の前提で、後から足せない（起動時にしか効かない）。
-func TestNew_WiresCmd(t *testing.T) {
+func TestBuildCmd_Wires(t *testing.T) {
 	prog := minimal()
 	prog.Cmd = config.Command{"/bin/echo", "hello world"}
 	prog.Workingdir = "/tmp"
@@ -79,19 +79,20 @@ func TestNew_WiresCmd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
+	cmd := p.buildCmd()
 
-	if p.cmd.Path != "/bin/echo" {
-		t.Errorf("Path = %q, want /bin/echo", p.cmd.Path)
+	if cmd.Path != "/bin/echo" {
+		t.Errorf("Path = %q, want /bin/echo", cmd.Path)
 	}
 	// 空白を含む引数が 1 つのまま渡ること（config のリスト形式が活きる経路）。
-	if len(p.cmd.Args) != 2 || p.cmd.Args[1] != "hello world" {
-		t.Errorf("Args = %#v, want [/bin/echo, \"hello world\"]", p.cmd.Args)
+	if len(cmd.Args) != 2 || cmd.Args[1] != "hello world" {
+		t.Errorf("Args = %#v, want [/bin/echo, \"hello world\"]", cmd.Args)
 	}
-	if p.cmd.Dir != "/tmp" {
-		t.Errorf("Dir = %q, want /tmp", p.cmd.Dir)
+	if cmd.Dir != "/tmp" {
+		t.Errorf("Dir = %q, want /tmp", cmd.Dir)
 	}
-	if p.cmd.SysProcAttr == nil || !p.cmd.SysProcAttr.Setpgid {
-		t.Errorf("Setpgid が立っていない: %#v （M-6 の Kill(-pgid) が届かなくなる）", p.cmd.SysProcAttr)
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		t.Errorf("Setpgid が立っていない: %#v （M-6 の Kill(-pgid) が届かなくなる）", cmd.SysProcAttr)
 	}
 	if p.name != "healthy" || p.index != 1 {
 		t.Errorf("name/index = %q/%d, want healthy/1", p.name, p.index)
@@ -104,7 +105,7 @@ func TestNew_WiresCmd(t *testing.T) {
 // 瞬間に子が PATH も HOME も失う。同名キーは設定が勝つ ——
 // os/exec が「重複キーは最後の値を使う」と決めている（Cmd.Env のドキュメント）ので、
 // 親の環境の後ろに足せばそうなる。
-func TestNew_EnvInheritsAndOverrides(t *testing.T) {
+func TestBuildCmd_EnvInheritsAndOverrides(t *testing.T) {
 	t.Setenv("TM_TEST_INHERITED", "from-parent")
 	t.Setenv("TM_TEST_OVERRIDE", "from-parent")
 
@@ -118,22 +119,23 @@ func TestNew_EnvInheritsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
+	cmd := p.buildCmd()
 
-	if !contains(p.cmd.Env, "TM_TEST_INHERITED=from-parent") {
+	if !contains(cmd.Env, "TM_TEST_INHERITED=from-parent") {
 		t.Error("親の環境が引き継がれていない（置き換えになっている）")
 	}
-	if !contains(p.cmd.Env, "TM_TEST_NEW=added") {
+	if !contains(cmd.Env, "TM_TEST_NEW=added") {
 		t.Error("設定の env が足されていない")
 	}
 	// 重複は「最後が勝つ」ので、設定の値が親の値より後ろに無ければならない。
-	if last(p.cmd.Env, "TM_TEST_OVERRIDE=") != "TM_TEST_OVERRIDE=from-config" {
-		t.Errorf("同名キーで設定が勝っていない: %q", last(p.cmd.Env, "TM_TEST_OVERRIDE="))
+	if last(cmd.Env, "TM_TEST_OVERRIDE=") != "TM_TEST_OVERRIDE=from-config" {
+		t.Errorf("同名キーで設定が勝っていない: %q", last(cmd.Env, "TM_TEST_OVERRIDE="))
 	}
 }
 
-// TestNew_EnvNilInherits は env を書かなかったときに nil のままであることを見る。
+// TestBuildCmd_EnvNilInherits は env を書かなかったときに nil のままであることを見る。
 // nil は os/exec にとって「親の環境をそのまま使う」の意味。
-func TestNew_EnvNilInherits(t *testing.T) {
+func TestBuildCmd_EnvNilInherits(t *testing.T) {
 	p, err, panicked := newProcess(t, "p", 0, minimal())
 	if panicked != nil {
 		t.Fatalf("panic: %v", panicked)
@@ -141,8 +143,8 @@ func TestNew_EnvNilInherits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if p.cmd.Env != nil {
-		t.Errorf("Env = %#v, want nil（未指定は継承）", p.cmd.Env)
+	if cmd := p.buildCmd(); cmd.Env != nil {
+		t.Errorf("Env = %#v, want nil（未指定は継承）", cmd.Env)
 	}
 }
 
@@ -161,6 +163,40 @@ func TestNew_PinsSpec(t *testing.T) {
 	prog.Stoptime = 99 // 呼び出し元が持っている Program を後から書き換える
 	if p.prog.Stoptime == 99 {
 		t.Error("spec がピン留めされていない（参照を持っている）")
+	}
+}
+
+// TestNew_DoesNotBuildCmd は New が exec.Cmd を作らないことを見る。
+// Process は「hello:0 という枠」で、起動のたびに Start() が exec.Cmd を作り直す。
+// New で作ると、exec.Cmd は 1 回しか Start() できないので再起動（M-5）で詰まる。
+func TestNew_DoesNotBuildCmd(t *testing.T) {
+	p, err, panicked := newProcess(t, "p", 0, minimal())
+	if panicked != nil {
+		t.Fatalf("panic: %v", panicked)
+	}
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if p.cmd != nil {
+		t.Errorf("cmd = %#v, want nil（Start() 前に組み立てている）", p.cmd)
+	}
+	if p.Pid() != 0 {
+		t.Errorf("Pid() = %d, want 0（起動前）", p.Pid())
+	}
+}
+
+// TestBuildCmd_Fresh は buildCmd が呼ぶたびに別の exec.Cmd を返すことを見る。
+// 使い回すと 2 回目の Start() が "exec: already started" で失敗する。
+func TestBuildCmd_Fresh(t *testing.T) {
+	p, err, panicked := newProcess(t, "p", 0, minimal())
+	if panicked != nil {
+		t.Fatalf("panic: %v", panicked)
+	}
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if p.buildCmd() == p.buildCmd() {
+		t.Error("同じ *exec.Cmd を返している（再起動で Start() できない）")
 	}
 }
 
@@ -184,19 +220,20 @@ func last(env []string, prefix string) string {
 	return out
 }
 
-// TestNew_WiresOutputFiles は渡した *os.File がそのまま cmd に入ることを見る。
+// TestBuildCmd_WiresOutputFiles は渡した *os.File がそのまま cmd に入ることを見る。
 // 開くのは呼び出し側の仕事（numprocs が 2 以上のとき、同じファイルを全プロセスで共有するため）。
-func TestNew_WiresOutputFiles(t *testing.T) {
+func TestBuildCmd_WiresOutputFiles(t *testing.T) {
 	out, errF := devNull(t), devNull(t)
 	p, err := New(minimal(), "p", 0, out, errF)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if p.cmd.Stdout != out {
-		t.Errorf("cmd.Stdout に渡した *os.File が入っていない: %#v", p.cmd.Stdout)
+	cmd := p.buildCmd()
+	if cmd.Stdout != out {
+		t.Errorf("cmd.Stdout に渡した *os.File が入っていない: %#v", cmd.Stdout)
 	}
-	if p.cmd.Stderr != errF {
-		t.Errorf("cmd.Stderr に渡した *os.File が入っていない: %#v", p.cmd.Stderr)
+	if cmd.Stderr != errF {
+		t.Errorf("cmd.Stderr に渡した *os.File が入っていない: %#v", cmd.Stderr)
 	}
 }
 

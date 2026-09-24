@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,10 +11,14 @@ import (
 )
 
 type Process struct {
-	prog  config.Program
-	cmd   *exec.Cmd
-	index int
-	name  string
+	prog   config.Program
+	cmd    *exec.Cmd
+	index  int
+	name   string
+	stdout *os.File
+	stderr *os.File
+	state  State
+	gen    uint64
 }
 
 func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.File) (*Process, error) {
@@ -26,23 +31,32 @@ func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.
 	if stderr == nil {
 		return nil, fmt.Errorf("%s:%d: stderr must not be nil", name, index)
 	}
-	cmd := exec.Command(p.Cmd[0], p.Cmd[1:]...)
-	cmd.Dir = string(p.Workingdir)
-	cmd.Env = envSlice(p.Env)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	return &Process{
-		prog:  *p,
-		cmd:   cmd,
-		index: index,
-		name:  name,
+		prog:   *p,
+		cmd:    nil, // Start() にて cmd は build する
+		index:  index,
+		name:   name,
+		stdout: stdout,
+		stderr: stderr,
+		state:  Stopped,
+		gen:    0,
 	}, nil
 }
 
+func (p *Process) buildCmd() (cmd *exec.Cmd) {
+	cmd = exec.Command(p.prog.Cmd[0], p.prog.Cmd[1:]...)
+	cmd.Dir = string(p.prog.Workingdir)
+	cmd.Env = envSlice(p.prog.Env)
+	cmd.Stdout = p.stdout
+	cmd.Stderr = p.stderr
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd
+}
+
 func (p *Process) Start() error {
+	p.cmd = p.buildCmd()
 	if err := p.cmd.Start(); err != nil {
 		return err
 	}
@@ -53,12 +67,15 @@ func (p *Process) Start() error {
 // cmd.Wait() のエラーは捨てる。
 // 当該cmd の終了状態が error に入るためこれを失敗扱いしない。
 func (p *Process) Wait() (*os.ProcessState, error) {
+	if p.cmd == nil {
+		return nil, errors.New("cmd not started")
+	}
 	err := p.cmd.Wait()
 	return p.cmd.ProcessState, err
 }
 
 func (p *Process) Pid() int {
-	if p.cmd.Process == nil {
+	if p.cmd == nil || p.cmd.Process == nil {
 		return 0
 	}
 	return p.cmd.Process.Pid

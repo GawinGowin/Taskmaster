@@ -102,13 +102,14 @@ func run() error {
 				break
 			}
 			wg.Go(func() {
-      ps, err := proc.Wait()
-      var exitErr *exec.ExitError
-      if err != nil && !errors.As(err, &exitErr) {
-              fmt.Fprintf(os.Stderr, "%s: wait: %v\n", proc.ID(), err)
-              return
-      }
-      fmt.Fprintf(os.Stderr, "%s: %s\n", proc.ID(), ps)			})
+				ps, err := proc.Wait()
+				var exitErr *exec.ExitError
+				if err != nil && !errors.As(err, &exitErr) {
+					fmt.Fprintf(os.Stderr, "%s: wait: %v\n", proc.ID(), err)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "%s: %s\n", proc.ID(), ps)
+			})
 		}
 	}
 	wg.Wait()
