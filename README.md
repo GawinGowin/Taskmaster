@@ -4,13 +4,15 @@
 （supervisord 相当）。フォアグラウンドに留まり、制御シェルから状態を見たり start / stop したりできる。
 
 > [!NOTE]
-> **現状は設定の読み込みまで実装済み。** プロセスの起動・監視・再起動・制御シェルは未実装。
+> **現状は起動と生死監視まで実装済み。** 設定を読み、`autostart` の program を起動して STARTING → RUNNING → EXITED の遷移を追う。
+> 再起動（`autorestart` / `startretries`）・停止（`stopsignal` / `stoptime`）・制御シェル・SIGHUP での再読み込み・
+> イベントログのファイル出力・`umask` の適用は未実装。
 
 ## ビルドと実行
 
 ```sh
 make build                                  # _output/bin/taskmasterd
-./_output/bin/taskmasterd -c <config.yaml>  # 設定を読んで検証する
+./_output/bin/taskmasterd -c <config.yaml>  # 起動し、全プロセスが終わるまで前面で待つ（遷移を stdout に表示）
 ```
 
 | フラグ | 意味 |
@@ -19,6 +21,12 @@ make build                                  # _output/bin/taskmasterd
 | `-V` | バージョンを表示して終了 |
 
 `make test` でテスト（`-race`）、`make vet` で `go vet`。
+
+動作確認用の設定は `configs/` にある。
+
+- `configs/taskmasterd.yaml` — `scripts/test.sh` を被験プロセスにした 11 program。`${TM_ROOT}` を使うので、
+  `mise` を通さないときは `TM_ROOT=$PWD ./_output/bin/taskmasterd -c configs/taskmasterd.yaml`
+- `configs/minimal.yaml` — `./logs/` に書く最小例
 
 ## 設定ファイル
 
@@ -59,10 +67,11 @@ programs:
 | `stoptime` | `10` | `SIGKILL` までの待ち秒数 |
 | `stdout` / `stderr` | 破棄 | リダイレクト先。**未指定・空なら `/dev/null` に捨てる** |
 | `workingdir` | 継承 | 作業ディレクトリ |
-| `umask` | 継承 | 8 進で書ける（`022` は 8 進の 22 として読む） |
+| `umask` | 継承 | 8 進で書ける（`022` は 8 進の 22 として読む）。**現状はパースと範囲検証のみで、子には未適用** |
 | `env` | なし | 子プロセスに足す環境変数。taskmaster の環境に追加する（同名キーは設定が勝つ） |
 
 未知のキーはエラーになる。設定ミスは起動前に行番号つきで落とす方針。
+program 名（`programs:` のキー）に使えるのは英数字と `_` `.` `-` だけで、先頭に `.` や `-` は使えない。
 
 ### `cmd` — 文字列とリスト
 
