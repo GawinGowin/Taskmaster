@@ -93,7 +93,7 @@ func (p *Process) SetState(s State) {
 	p.state = s
 }
 
-// start() 以外からは呼ばない
+// start(), stop() からのみ呼ばれる
 func (p *Process) NextGen() uint64 {
 	p.gen++
 	return p.gen

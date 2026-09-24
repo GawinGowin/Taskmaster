@@ -61,7 +61,7 @@ func (c *Controller) Run() {
 		}
 	}
 
-	for c.shutdown && c.isAllTerminal() {
+	for !(c.shutdown && c.isAllTerminal()) {
 		switch ev := (<-c.events).(type) {
 		case evStartTimeElapsed:
 			p := c.byID[ev.id]
@@ -126,8 +126,27 @@ func (c *Controller) Run() {
 				continue
 			}
 			c.start(p)
-		}
 
+		case evShutdown:
+			if !c.shutdown {
+				c.shutdown = true
+				for _, name := range c.order {
+					for _, p := range c.groups[name].procs {
+						c.stop(p)
+					}
+				}
+			}
+
+		case evStopTimeout:
+			p := c.byID[ev.id]
+			if p == nil {
+				continue
+			}
+			if p.Gen() != ev.gen || p.State() != process.Stopping {
+				continue
+			}
+			c.sendSignal(p, syscall.SIGKILL)
+		}
 	}
 }
 
@@ -179,6 +198,27 @@ func (c *Controller) startFailed(p *process.Process, why string) {
 	})
 }
 
+func (c *Controller) stop(p *process.Process) {
+	switch p.State() {
+	case process.Starting, process.Running:
+		gen := p.Gen()
+		id := p.ID()
+		stoptime := p.Spec().Stoptime
+		stopsignal := syscall.Signal(p.Spec().Stopsignal)
+
+		c.to(p, process.Stopping, fmt.Sprintf("sent %s, kill in %ds", stopsignal, stoptime))
+		c.sendSignal(p, stopsignal)
+
+		time.AfterFunc(time.Duration(stoptime)*time.Second, func() {
+			c.events <- evStopTimeout{id: id, gen: gen}
+		})
+
+	case process.Backoff:
+		c.to(p, process.Stopped, "backoff cancelled")
+		p.NextGen()
+	}
+}
+
 func (c *Controller) isAllTerminal() bool {
 	for _, v := range c.byID {
 		if !v.State().IsTerminal() {
@@ -186,6 +226,20 @@ func (c *Controller) isAllTerminal() bool {
 		}
 	}
 	return true
+}
+
+func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
+	var err error
+	pid := p.Pid()
+	id := p.ID()
+	if pid != 0 {
+		err = syscall.Kill(-pid, sig)
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		fmt.Fprintf(os.Stderr, "%s (pid %d): unable to send %s to group, probably already exited: %v\n", id, pid, sig, err)
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "%s (pid %d): failed to send %s to group: %v\n", id, pid, sig, err)
+	}
 }
 
 type ProgramGroup struct {
