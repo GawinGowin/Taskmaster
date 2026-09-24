@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"syscall"
 	"time"
 
 	"taskmaster/internal/config"
@@ -78,6 +79,66 @@ func (c *Controller) start(p *process.Process) {
 	})
 }
 
+func (c *Controller) Run() {
+	c.t0 = time.Now()
+
+	for _, name := range c.order {
+		if g := c.groups[name]; g.spec.Autostart {
+			for _, p := range g.procs {
+				c.start(p)
+			}
+		}
+	}
+
+	for !c.isAllTerminal() {
+		switch ev := (<-c.events).(type) {
+		case evStartTimeElapsed:
+			p := c.byID[ev.id]
+			if p == nil {
+				continue
+			}
+			if p.Gen() != ev.gen || p.State() != process.Starting {
+				continue
+			}
+			c.to(p, process.Running, "")
+
+		case evExited:
+			p := c.byID[ev.id]
+			if p == nil {
+				continue
+			}
+			if p.Gen() != ev.gen {
+				continue
+			}
+			ok := isExpected(ev.ps, p.Spec().Exitcodes)
+			how := describe(ev.ps)
+			switch p.State() {
+			case process.Starting:
+				c.to(p, process.Exited, how)
+
+			case process.Stopping:
+				c.to(p, process.Stopped, "こちらの指示で停止した ("+how+")")
+
+			case process.Running:
+				c.to(p, process.Exited, fmt.Sprintf("%s (期待どおり=%v)", how, ok))
+			}
+			if c.shutdown && c.isAllTerminal() {
+				return
+			}
+		}
+
+	}
+}
+
+func (c *Controller) isAllTerminal() bool {
+	for _, v := range c.byID {
+		if !v.State().IsTerminal() {
+			return false
+		}
+	}
+	return true
+}
+
 type ProgramGroup struct {
 	spec   config.Program // type Process も同様に値として持つので暫定で持たせる
 	stdout *os.File
@@ -119,4 +180,25 @@ func (pg *ProgramGroup) closeFd() {
 		pg.stdout.Close()
 	}
 	pg.stderr.Close()
+}
+
+func describe(ps *os.ProcessState) string {
+	ws := ps.Sys().(syscall.WaitStatus)
+	if ws.Signaled() {
+		return "signal " + ws.Signal().String()
+	}
+	return fmt.Sprintf("exit %d", ps.ExitCode())
+}
+
+// シグナル死は常に想定外。
+func isExpected(ps *os.ProcessState, codes []int) bool {
+	if !ps.Exited() {
+		return false
+	}
+	for _, c := range codes {
+		if ps.ExitCode() == c {
+			return true
+		}
+	}
+	return false
 }

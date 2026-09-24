@@ -21,7 +21,7 @@ func (s State) String() string {
 	return [...]string{"STOPPED", "STARTING", "RUNNING", "BACKOFF", "STOPPING", "EXITED", "FATAL"}[s]
 }
 
-func (s State) Terminal() bool {
+func (s State) IsTerminal() bool {
 	return s == Stopped || s == Exited || s == Fatal
 }
 
