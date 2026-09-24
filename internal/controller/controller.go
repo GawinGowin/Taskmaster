@@ -18,6 +18,7 @@ type Controller struct {
 	shutdown bool
 	log      []process.Transition
 	t0       time.Time
+	byID     map[string]*process.Process
 }
 
 func New(cfg *config.Config) (*Controller, error) {
@@ -25,16 +26,20 @@ func New(cfg *config.Config) (*Controller, error) {
 	c.order = slices.Sorted(maps.Keys(cfg.Programs))
 	c.groups = make(map[string]*ProgramGroup, len(c.order))
 	c.events = make(chan event, 64) // バッファ数 64 は暫定値
-	for _, n := range c.order {
-		program := cfg.Programs[n]
-		g, err := newProgramGroup(&program, n)
+	c.byID = make(map[string]*process.Process)
+	for _, name := range c.order {
+		program := cfg.Programs[name]
+		group, err := newProgramGroup(&program, name)
 		if err != nil {
 			for _, pg := range c.groups {
 				pg.closeFd()
 			}
 			return nil, err
 		}
-		c.groups[n] = g
+		c.groups[name] = group
+		for _, p := range group.procs {
+			c.byID[p.ID()] = p
+		}
 	}
 	return &c, nil
 }
