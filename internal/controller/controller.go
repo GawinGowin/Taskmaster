@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"os/signal"
 	"slices"
 	"syscall"
 	"time"
@@ -52,6 +53,20 @@ func New(cfg *config.Config) (*Controller, error) {
 
 func (c *Controller) Run() {
 	c.t0 = time.Now()
+
+	sigCh := make(chan os.Signal, 1)
+	defer signal.Stop(sigCh)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for sig := range sigCh {
+			switch sig {
+			case syscall.SIGINT, syscall.SIGTERM:
+				c.events <- evShutdown{sig: sig}
+			case syscall.SIGHUP:
+				fmt.Fprintf(os.Stderr, "received %s, ignored (reload not implemented yet)\n", sig)
+			}
+		}
+	}()
 
 	for _, name := range c.order {
 		if g := c.groups[name]; g.spec.Autostart {
@@ -128,7 +143,10 @@ func (c *Controller) Run() {
 			c.start(p)
 
 		case evShutdown:
-			if !c.shutdown {
+			if c.shutdown {
+				fmt.Fprintf(os.Stderr, "received %s, already shutting down\n", ev.sig)
+			} else {
+				fmt.Fprintf(os.Stderr, "received %s, shutting down\n", ev.sig)
 				c.shutdown = true
 				for _, name := range c.order {
 					for _, p := range c.groups[name].procs {
