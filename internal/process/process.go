@@ -10,14 +10,15 @@ import (
 )
 
 type Process struct {
-	prog   config.Program
-	proc   *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
-	index  int
-	name   string
-	stdout *os.File
-	stderr *os.File
-	state  State
-	gen    uint64
+	prog    config.Program
+	proc    *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
+	index   int
+	name    string
+	stdout  *os.File
+	stderr  *os.File
+	state   State
+	gen     uint64
+	retries int
 }
 
 func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.File) (*Process, error) {
@@ -96,6 +97,20 @@ func (p *Process) SetState(s State) {
 func (p *Process) NextGen() uint64 {
 	p.gen++
 	return p.gen
+}
+
+func (p *Process) Retries() int {
+	return p.retries
+}
+
+func (p *Process) NextRetries() int {
+	p.retries++
+	return p.retries
+}
+
+func (p *Process) ResetRetries() int {
+	p.retries = 0
+	return p.retries
 }
 
 func (p *Process) Spec() config.Program {
