@@ -120,14 +120,14 @@ func TestLoadFrom(t *testing.T) {
 
 				// alpha は cmd だけ。全項目がデフォルト。
 				if alpha.Numprocs != 1 || !alpha.Autostart || alpha.Autorestart != config.Unexpected ||
-					alpha.Starttretries != 3 || alpha.Starttime != 1 || alpha.Stoptime != 10 {
+					alpha.Startretries != 3 || alpha.Starttime != 1 || alpha.Stoptime != 10 {
 					t.Errorf("alpha にデフォルトが入っていない: %#v", alpha)
 				}
 				// bravo は numprocs だけ上書き。残りはデフォルトのまま。
 				if bravo.Numprocs != 2 {
 					t.Errorf("bravo.Numprocs = %d, want 2", bravo.Numprocs)
 				}
-				if bravo.Starttretries != 3 || bravo.Stoptime != 10 {
+				if bravo.Startretries != 3 || bravo.Stoptime != 10 {
 					t.Errorf("bravo の未指定項目にデフォルトが入っていない: %#v", bravo)
 				}
 				// charlie は autorestart だけ上書き。

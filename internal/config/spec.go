@@ -182,27 +182,27 @@ func (s *Command) UnmarshalYAML(n *yaml.Node) error {
 }
 
 type Program struct {
-	Cmd           Command           `yaml:"cmd"`
-	Numprocs      int               `yaml:"numprocs"`
-	Umask         *int              `yaml:"umask"`
-	Workingdir    EnvString         `yaml:"workingdir"`
-	Autostart     bool              `yaml:"autostart"`
-	Autorestart   Autorestart       `yaml:"autorestart"`
-	Exitcodes     ExitCodes         `yaml:"exitcodes"`
-	Starttretries int               `yaml:"starttretries"`
-	Starttime     int               `yaml:"starttime"`
-	Stopsignal    Stopsignal        `yaml:"stopsignal"`
-	Stoptime      int               `yaml:"stoptime"`
-	Stdout        EnvString         `yaml:"stdout"`
-	Stderr        EnvString         `yaml:"stderr"`
-	Env           map[string]string `yaml:"env"`
+	Cmd          Command           `yaml:"cmd"`
+	Numprocs     int               `yaml:"numprocs"`
+	Umask        *int              `yaml:"umask"`
+	Workingdir   EnvString         `yaml:"workingdir"`
+	Autostart    bool              `yaml:"autostart"`
+	Autorestart  Autorestart       `yaml:"autorestart"`
+	Exitcodes    ExitCodes         `yaml:"exitcodes"`
+	Startretries int               `yaml:"startretries"`
+	Starttime    int               `yaml:"starttime"`
+	Stopsignal   Stopsignal        `yaml:"stopsignal"`
+	Stoptime     int               `yaml:"stoptime"`
+	Stdout       EnvString         `yaml:"stdout"`
+	Stderr       EnvString         `yaml:"stderr"`
+	Env          map[string]string `yaml:"env"`
 }
 
 // 自前の UnmarshalYAML を書いた代償として、その範囲の未知フィールド検出が失われたため
 var programFields = map[string]bool{
 	"cmd": true, "numprocs": true, "umask": true, "workingdir": true,
 	"autostart": true, "autorestart": true, "exitcodes": true,
-	"starttretries": true, "starttime": true, "stopsignal": true,
+	"startretries": true, "starttime": true, "stopsignal": true,
 	"stoptime": true, "stdout": true, "stderr": true, "env": true,
 }
 
@@ -218,14 +218,14 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 		}
 	}
 	p := plain{
-		Numprocs:      1,
-		Autostart:     true,
-		Autorestart:   Unexpected,
-		Exitcodes:     ExitCodes{0},
-		Starttime:     1,
-		Starttretries: 3,
-		Stopsignal:    Stopsignal(syscall.SIGTERM),
-		Stoptime:      10,
+		Numprocs:     1,
+		Autostart:    true,
+		Autorestart:  Unexpected,
+		Exitcodes:    ExitCodes{0},
+		Starttime:    1,
+		Startretries: 3,
+		Stopsignal:   Stopsignal(syscall.SIGTERM),
+		Stoptime:     10,
 	}
 	if err := n.Decode(&p); err != nil {
 		return err
@@ -239,8 +239,8 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 	if p.Umask != nil && (*(p.Umask) < 0o000 || *(p.Umask) > 0o777) {
 		return fmt.Errorf("line %d: umask must be between 0o000 and 0o777, got %d (%O)", n.Line, *p.Umask, *p.Umask)
 	}
-	if p.Starttretries < 0 {
-		return fmt.Errorf("line %d: starttretries must be >= 0, got %d", n.Line, p.Starttretries)
+	if p.Startretries < 0 {
+		return fmt.Errorf("line %d: startretries must be >= 0, got %d", n.Line, p.Startretries)
 	}
 	if p.Starttime < 0 {
 		return fmt.Errorf("line %d: starttime must be >= 0, got %d", n.Line, p.Starttime)

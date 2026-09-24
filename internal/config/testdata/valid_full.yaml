@@ -10,7 +10,7 @@ programs:
     autostart: false
     autorestart: always
     exitcodes: [0, 2, 3]
-    starttretries: 5
+    startretries: 5
     starttime: 7
     stopsignal: USR1
     stoptime: 20

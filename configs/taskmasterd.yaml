@@ -12,7 +12,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -32,7 +32,7 @@ programs:
     autostart: false
     autorestart: unexpected
     exitcodes: 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -50,7 +50,7 @@ programs:
     autostart: true
     autorestart: unexpected
     exitcodes: 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -70,7 +70,7 @@ programs:
     autorestart: never
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -91,7 +91,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -112,7 +112,7 @@ programs:
     autorestart: always
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -133,7 +133,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 2
+    startretries: 2
     starttime: 5
     stopsignal: TERM
     stoptime: 10
@@ -155,7 +155,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: USR1
     stoptime: 10
@@ -175,7 +175,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 5
@@ -196,7 +196,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10
@@ -217,7 +217,7 @@ programs:
     autorestart: unexpected
     exitcodes:
       - 0
-    starttretries: 3
+    startretries: 3
     starttime: 3
     stopsignal: TERM
     stoptime: 10

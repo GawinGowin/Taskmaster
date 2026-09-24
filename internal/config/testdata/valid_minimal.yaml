@@ -1,7 +1,7 @@
 # 期待: 成功
 # 狙い: cmd だけを書いたとき Program のデフォルト値が入ること
 #   numprocs=1 / umask=nil / autostart=true / autorestart=Unexpected
-#   exitcodes=[0] / starttretries=3 / starttime=1 / stopsignal="TERM" / stoptime=10
+#   exitcodes=[0] / startretries=3 / starttime=1 / stopsignal="TERM" / stoptime=10
 #   workingdir="" / stdout="" / stderr="" / env=nil
 programs:
   minimal:

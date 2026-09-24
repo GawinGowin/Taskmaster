@@ -33,8 +33,8 @@ func TestProgram_Validation(t *testing.T) {
 			yamlFile: "invalid_stoptime_negative", errContains: "stoptime must be >= 0, got -1",
 		},
 		{
-			name:     "starttretries が負ならエラー",
-			yamlFile: "invalid_starttretries_negative", errContains: "starttretries must be >= 0, got -2",
+			name:     "startretries が負ならエラー",
+			yamlFile: "invalid_startretries_negative", errContains: "startretries must be >= 0, got -2",
 		},
 		{
 			// 10 進で書いた人には 10 進が、8 進で書いた人には 8 進が文面に出ること。
@@ -74,7 +74,7 @@ func TestProgram_ValidationBoundaries(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 		p := cfg.Programs["p"]
-		if p.Starttime != 0 || p.Stoptime != 0 || p.Starttretries != 0 {
+		if p.Starttime != 0 || p.Stoptime != 0 || p.Startretries != 0 {
 			t.Errorf("0 が通っていない: %#v", p)
 		}
 		if p.Umask == nil {

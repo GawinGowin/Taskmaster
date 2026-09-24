@@ -33,7 +33,7 @@ programs:
     autorestart: unexpected
     exitcodes: [0]
     starttime: 5
-    starttretries: 3
+    startretries: 3
     stopsignal: TERM
     stoptime: 10
     stdout: /tmp/nginx.stdout
@@ -54,7 +54,7 @@ programs:
 | `autorestart` | `unexpected` | `always` / `never` / `unexpected` |
 | `exitcodes` | `[0]` | 期待される終了コード。スカラーでもリストでもよい |
 | `starttime` | `1` | 起動成功とみなすまでの稼働秒数 |
-| `starttretries` | `3` | 起動失敗時の再試行回数 |
+| `startretries` | `3` | 起動失敗時の再試行回数 |
 | `stopsignal` | `TERM` | 正常停止に使うシグナル。`TERM` `HUP` `INT` `QUIT` `KILL` `USR1` `USR2`（`SIG` 接頭辞と番号も可） |
 | `stoptime` | `10` | `SIGKILL` までの待ち秒数 |
 | `stdout` / `stderr` | 破棄 | リダイレクト先。**未指定・空なら `/dev/null` に捨てる** |

@@ -1,6 +1,6 @@
-# 期待: エラー "line N: starttretries must be >= 0, got -2"
+# 期待: エラー "line N: startretries must be >= 0, got -2"
 # 狙い: 負の回数。0 は許す（再試行しない設定）
 programs:
   p:
     cmd: /bin/true
-    starttretries: -2
+    startretries: -2

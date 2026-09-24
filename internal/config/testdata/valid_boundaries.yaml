@@ -1,4 +1,4 @@
-# 期待: 成功 / starttime=0 stoptime=0 starttretries=0 umask=511(0o777)
+# 期待: 成功 / starttime=0 stoptime=0 startretries=0 umask=511(0o777)
 # 狙い: 「0 は許す」「0o777 は許す」の境界。検証を `> 0` や `< 0o777` と
 #   書き間違えたときにここが赤くなる
 programs:
@@ -6,5 +6,5 @@ programs:
     cmd: /bin/true
     starttime: 0
     stoptime: 0
-    starttretries: 0
+    startretries: 0
     umask: 0o777
