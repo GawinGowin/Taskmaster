@@ -64,8 +64,7 @@ func (p *Process) Start() error {
 }
 
 // goroutine から呼び出される。
-// cmd.Wait() のエラーは捨てる。
-// 当該cmd の終了状態が error に入るためこれを失敗扱いしない。
+// 当該cmd の終了状態が error に入る
 func (p *Process) Wait() (*os.ProcessState, error) {
 	if p.cmd == nil {
 		return nil, errors.New("cmd not started")
@@ -82,6 +81,25 @@ func (p *Process) Pid() int {
 }
 
 func (p *Process) ID() string { return fmt.Sprintf("%s:%d", p.name, p.index) }
+
+func (p *Process) State() State {
+	return p.state
+}
+
+func (p *Process) Gen() uint64 {
+	return p.gen
+}
+
+// to() 以外からは呼ばない
+func (p *Process) SetState(s State) {
+	p.state = s
+}
+
+// start() 以外からは呼ばない
+func (p *Process) NextGen() uint64 {
+	p.gen++
+	return p.gen
+}
 
 func envSlice(m map[string]string) []string {
 	if m == nil {
