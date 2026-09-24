@@ -24,6 +24,9 @@ type Controller struct {
 	byID     map[string]*process.Process
 }
 
+// バックオフ 500 msは暫定値
+const backoffUnit = 500 * time.Millisecond
+
 func New(cfg *config.Config) (*Controller, error) {
 	var c Controller
 	c.order = slices.Sorted(maps.Keys(cfg.Programs))
@@ -55,15 +58,15 @@ func (c *Controller) to(p *process.Process, next process.State, why string) {
 }
 
 func (c *Controller) start(p *process.Process) {
-	wait, err := p.Start()
-	if err != nil {
-		c.to(p, process.Fatal, err.Error())
-		return
-	}
 	gen := p.NextGen()
 	id := p.ID()
+	c.to(p, process.Starting, fmt.Sprintf("gen=%d", gen))
+	wait, err := p.Start()
+	if err != nil {
+		c.startFailed(p, err.Error())
+		return
+	}
 
-	c.to(p, process.Starting, fmt.Sprintf("pid=%d gen=%d", p.Pid(), gen))
 
 	go func() {
 		ps, err := wait()
@@ -101,6 +104,7 @@ func (c *Controller) Run() {
 			if p.Gen() != ev.gen || p.State() != process.Starting {
 				continue
 			}
+			p.ResetRetries()
 			c.to(p, process.Running, "")
 
 		case evExited:
@@ -122,7 +126,7 @@ func (c *Controller) Run() {
 			}
 			switch p.State() {
 			case process.Starting:
-				c.to(p, process.Exited, how)
+				c.startFailed(p, how)
 
 			case process.Stopping:
 				c.to(p, process.Stopped, "expected stop ("+how+")")
@@ -133,9 +137,35 @@ func (c *Controller) Run() {
 			if c.shutdown {
 				return
 			}
+
+		case evBackoffElapsed:
+			p := c.byID[ev.id]
+			if p == nil {
+				continue
+			}
+			if p.Gen() != ev.gen || p.State() != process.Backoff {
+				continue
+			}
+			c.start(p)
 		}
 
 	}
+}
+
+func (c *Controller) startFailed(p *process.Process, why string) {
+	sp := p.Spec()
+	gen := p.Gen()
+	retries := p.NextRetries()
+	id := p.ID()
+	c.to(p, process.Backoff, fmt.Sprintf("retry (%d/%d) %s", retries, sp.Startretries, why))
+	if retries > p.Spec().Startretries {
+		p.ResetRetries()
+		c.to(p, process.Fatal, fmt.Sprintf("retries exceed: %s", why))
+		return
+	}
+	time.AfterFunc(time.Duration(retries)*backoffUnit, func() {
+		c.events <- evBackoffElapsed{id: id, gen: gen}
+	})
 }
 
 func (c *Controller) isAllTerminal() bool {
