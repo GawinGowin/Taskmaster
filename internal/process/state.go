@@ -1,7 +1,6 @@
 package process
 
 import (
-	"os"
 	"time"
 )
 
@@ -38,15 +37,3 @@ type Status struct {
 	State State
 	Gen   uint64
 }
-
-type evExited struct {
-	id  string
-	gen uint64
-	ps  *os.ProcessState
-}
-type evStartTimeElapsed struct {
-	id  string
-	gen uint64
-}
-type evStopTimeout struct{}
-type evBackoffElapsed struct{}
