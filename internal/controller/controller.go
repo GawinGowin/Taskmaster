@@ -50,38 +50,6 @@ func New(cfg *config.Config) (*Controller, error) {
 	return &c, nil
 }
 
-func (c *Controller) to(p *process.Process, next process.State, why string) {
-	t := process.Transition{At: time.Since(c.t0), ID: p.ID(), From: p.State(), To: next, Why: why}
-	c.log = append(c.log, t)
-	p.SetState(next)
-	fmt.Println(t)
-}
-
-func (c *Controller) start(p *process.Process) {
-	gen := p.NextGen()
-	id := p.ID()
-	c.to(p, process.Starting, fmt.Sprintf("gen=%d", gen))
-	wait, err := p.Start()
-	if err != nil {
-		c.startFailed(p, err.Error())
-		return
-	}
-
-	go func() {
-		ps, err := wait()
-		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
-		// err には wait 自体の失敗だけを残す。
-		if _, ok := errors.AsType[*exec.ExitError](err); ok {
-			err = nil
-		}
-		c.events <- evExited{id: id, gen: gen, ps: ps, err: err}
-	}()
-
-	time.AfterFunc(time.Duration(p.Spec().Starttime)*time.Second, func() {
-		c.events <- evStartTimeElapsed{id: id, gen: gen}
-	})
-}
-
 func (c *Controller) Run() {
 	c.t0 = time.Now()
 
@@ -161,6 +129,38 @@ func (c *Controller) Run() {
 		}
 
 	}
+}
+
+func (c *Controller) to(p *process.Process, next process.State, why string) {
+	t := process.Transition{At: time.Since(c.t0), ID: p.ID(), From: p.State(), To: next, Why: why}
+	c.log = append(c.log, t)
+	p.SetState(next)
+	fmt.Println(t)
+}
+
+func (c *Controller) start(p *process.Process) {
+	gen := p.NextGen()
+	id := p.ID()
+	c.to(p, process.Starting, fmt.Sprintf("gen=%d", gen))
+	wait, err := p.Start()
+	if err != nil {
+		c.startFailed(p, err.Error())
+		return
+	}
+
+	go func() {
+		ps, err := wait()
+		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
+		// err には wait 自体の失敗だけを残す。
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+			err = nil
+		}
+		c.events <- evExited{id: id, gen: gen, ps: ps, err: err}
+	}()
+
+	time.AfterFunc(time.Duration(p.Spec().Starttime)*time.Second, func() {
+		c.events <- evStartTimeElapsed{id: id, gen: gen}
+	})
 }
 
 func (c *Controller) startFailed(p *process.Process, why string) {
