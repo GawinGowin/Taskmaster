@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"sync"
 
@@ -101,8 +102,13 @@ func run() error {
 				break
 			}
 			wg.Go(func() {
-				proc.Wait()
-			})
+      ps, err := proc.Wait()
+      var exitErr *exec.ExitError
+      if err != nil && !errors.As(err, &exitErr) {
+              fmt.Fprintf(os.Stderr, "%s: wait: %v\n", proc.ID(), err)
+              return
+      }
+      fmt.Fprintf(os.Stderr, "%s: %s\n", proc.ID(), ps)			})
 		}
 	}
 	wg.Wait()
