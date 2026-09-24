@@ -177,8 +177,8 @@ func TestNew_DoesNotBuildCmd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if p.cmd != nil {
-		t.Errorf("cmd = %#v, want nil（Start() 前に組み立てている）", p.cmd)
+	if p.proc != nil {
+		t.Errorf("proc = %#v, want nil（Start() 前に起動している）", p.proc)
 	}
 	if p.Pid() != 0 {
 		t.Errorf("Pid() = %d, want 0（起動前）", p.Pid())

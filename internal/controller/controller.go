@@ -55,7 +55,8 @@ func (c *Controller) to(p *process.Process, next process.State, why string) {
 }
 
 func (c *Controller) start(p *process.Process) {
-	if err := p.Start(); err != nil {
+	wait, err := p.Start()
+	if err != nil {
 		c.to(p, process.Fatal, err.Error())
 		return
 	}
@@ -65,7 +66,7 @@ func (c *Controller) start(p *process.Process) {
 	c.to(p, process.Starting, fmt.Sprintf("pid=%d gen=%d", p.Pid(), gen))
 
 	go func() {
-		ps, err := p.Wait()
+		ps, err := wait()
 		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
 		// err には wait 自体の失敗だけを残す。
 		if _, ok := errors.AsType[*exec.ExitError](err); ok {

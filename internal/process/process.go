@@ -1,7 +1,6 @@
 package process
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +11,7 @@ import (
 
 type Process struct {
 	prog   config.Program
-	cmd    *exec.Cmd
+	proc   *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
 	index  int
 	name   string
 	stdout *os.File
@@ -34,7 +33,7 @@ func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.
 
 	return &Process{
 		prog:   *p,
-		cmd:    nil, // Start() にて cmd は build する
+		proc:   nil, // Start() にて設定する
 		index:  index,
 		name:   name,
 		stdout: stdout,
@@ -55,29 +54,27 @@ func (p *Process) buildCmd() (cmd *exec.Cmd) {
 	return cmd
 }
 
-func (p *Process) Start() error {
-	p.cmd = p.buildCmd()
-	if err := p.cmd.Start(); err != nil {
-		return err
+// 戻り値の wait は watcher ゴルーチンから 1 回だけ呼ぶ。
+// exec.Cmd は wait の中にだけ閉じ込め、p には *os.Process しか残さない。
+// cmd.Wait() が書き込む cmd.ProcessState をループ側から読めないようにするため。
+func (p *Process) Start() (wait func() (*os.ProcessState, error), err error) {
+	cmd := p.buildCmd()
+	if err := cmd.Start(); err != nil {
+		p.proc = nil
+		return nil, err
 	}
-	return nil
-}
-
-// goroutine から呼び出される。
-// 当該cmd の終了状態が error に入る
-func (p *Process) Wait() (*os.ProcessState, error) {
-	if p.cmd == nil {
-		return nil, errors.New("cmd not started")
-	}
-	err := p.cmd.Wait()
-	return p.cmd.ProcessState, err
+	p.proc = cmd.Process
+	return func() (*os.ProcessState, error) {
+		err := cmd.Wait()
+		return cmd.ProcessState, err
+	}, nil
 }
 
 func (p *Process) Pid() int {
-	if p.cmd == nil || p.cmd.Process == nil {
+	if p.proc == nil {
 		return 0
 	}
-	return p.cmd.Process.Pid
+	return p.proc.Pid
 }
 
 func (p *Process) ID() string { return fmt.Sprintf("%s:%d", p.name, p.index) }
