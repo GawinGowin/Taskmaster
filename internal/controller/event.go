@@ -8,6 +8,7 @@ type evExited struct {
 	id  string
 	gen uint64
 	ps  *os.ProcessState
+	err error // wait 自体が失敗したとき
 }
 type evStartTimeElapsed struct {
 	id  string

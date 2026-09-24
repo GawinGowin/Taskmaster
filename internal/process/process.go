@@ -101,6 +101,10 @@ func (p *Process) NextGen() uint64 {
 	return p.gen
 }
 
+func (p *Process) Spec() config.Program {
+	return p.prog
+}
+
 func envSlice(m map[string]string) []string {
 	if m == nil {
 		return nil

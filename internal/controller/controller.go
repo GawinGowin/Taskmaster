@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
 	"time"
 
@@ -49,6 +51,31 @@ func (c *Controller) to(p *process.Process, next process.State, why string) {
 	c.log = append(c.log, t)
 	p.SetState(next)
 	fmt.Println(t)
+}
+
+func (c *Controller) start(p *process.Process) {
+	if err := p.Start(); err != nil {
+		c.to(p, process.Fatal, err.Error())
+		return
+	}
+	gen := p.NextGen()
+	id := p.ID()
+
+	c.to(p, process.Starting, fmt.Sprintf("pid=%d gen=%d", p.Pid(), gen))
+
+	go func() {
+		ps, err := p.Wait()
+		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
+		// err には wait 自体の失敗だけを残す。
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+			err = nil
+		}
+		c.events <- evExited{id: id, gen: gen, ps: ps, err: err}
+	}()
+
+	time.AfterFunc(time.Duration(p.Spec().Starttime)*time.Second, func() {
+		c.events <- evStartTimeElapsed{id: id, gen: gen}
+	})
 }
 
 type ProgramGroup struct {
