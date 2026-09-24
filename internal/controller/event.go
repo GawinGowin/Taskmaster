@@ -14,8 +14,11 @@ type evStartTimeElapsed struct {
 	id  string
 	gen uint64
 }
+type evBackoffElapsed struct {
+	id  string
+	gen uint64
+}
 type evStopTimeout struct{}
-type evBackoffElapsed struct{}
 
 func (evExited) isEvent()           {}
 func (evStartTimeElapsed) isEvent() {}
