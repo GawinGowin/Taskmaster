@@ -1,6 +1,7 @@
 package process
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -30,6 +31,11 @@ type Transition struct {
 	From State
 	To   State
 	Why  string
+}
+
+func (t Transition) String() string {
+	return fmt.Sprintf("%6.2fs  %-12s %-8s → %-8s  %s",
+		t.At.Seconds(), t.ID, t.From, t.To, t.Why)
 }
 
 type Status struct {

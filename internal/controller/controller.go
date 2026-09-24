@@ -44,6 +44,13 @@ func New(cfg *config.Config) (*Controller, error) {
 	return &c, nil
 }
 
+func (c *Controller) to(p *process.Process, next process.State, why string) {
+	t := process.Transition{At: time.Since(c.t0), ID: p.ID(), From: p.State(), To: next, Why: why}
+	c.log = append(c.log, t)
+	p.SetState(next)
+	fmt.Println(t)
+}
+
 type ProgramGroup struct {
 	spec   config.Program // type Process も同様に値として持つので暫定で持たせる
 	stdout *os.File
