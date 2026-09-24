@@ -110,8 +110,15 @@ func (c *Controller) Run() {
 			if p.Gen() != ev.gen {
 				continue
 			}
-			ok := isExpected(ev.ps, p.Spec().Exitcodes)
-			how := describe(ev.ps)
+			var ok bool
+			var how string
+			if ev.err != nil {
+				ok = false
+				how = ev.err.Error()
+			} else {
+				ok = isExpected(ev.ps, p.Spec().Exitcodes)
+				how = describe(ev.ps)
+			}
 			switch p.State() {
 			case process.Starting:
 				c.to(p, process.Exited, how)
