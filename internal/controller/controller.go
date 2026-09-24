@@ -2,7 +2,9 @@ package controller
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"taskmaster/internal/config"
@@ -12,10 +14,29 @@ import (
 type Controller struct {
 	groups   map[string]*ProgramGroup
 	order    []string
-	events   chan any
+	events   chan event
 	shutdown bool
 	log      []process.Transition
 	t0       time.Time
+}
+
+func New(cfg *config.Config) (*Controller, error) {
+	var c Controller
+	c.order = slices.Sorted(maps.Keys(cfg.Programs))
+	c.groups = make(map[string]*ProgramGroup, len(c.order))
+	c.events = make(chan event, 64) // バッファ数 64 は暫定値
+	for _, n := range c.order {
+		program := cfg.Programs[n]
+		g, err := newProgramGroup(&program, n)
+		if err != nil {
+			for _, pg := range c.groups {
+				pg.closeFd()
+			}
+			return nil, err
+		}
+		c.groups[n] = g
+	}
+	return &c, nil
 }
 
 type ProgramGroup struct {
@@ -46,13 +67,17 @@ func newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
 	for i := 0; i < p.Numprocs; i++ {
 		proc, err := process.New(p, name, i, pg.stdout, pg.stderr)
 		if err != nil {
-			if pg.stdout != pg.stderr {
-				pg.stdout.Close()
-			}
-			pg.stderr.Close()
+			pg.closeFd()
 			return nil, err
 		}
 		pg.procs = append(pg.procs, proc)
 	}
 	return &pg, nil
+}
+
+func (pg *ProgramGroup) closeFd() {
+	if pg.stdout != pg.stderr {
+		pg.stdout.Close()
+	}
+	pg.stderr.Close()
 }
