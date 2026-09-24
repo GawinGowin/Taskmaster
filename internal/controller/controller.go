@@ -117,12 +117,12 @@ func (c *Controller) Run() {
 				c.to(p, process.Exited, how)
 
 			case process.Stopping:
-				c.to(p, process.Stopped, "こちらの指示で停止した ("+how+")")
+				c.to(p, process.Stopped, "expected stop ("+how+")")
 
 			case process.Running:
-				c.to(p, process.Exited, fmt.Sprintf("%s (期待どおり=%v)", how, ok))
+				c.to(p, process.Exited, fmt.Sprintf("%s (expected=%v)", how, ok))
 			}
-			if c.shutdown && c.isAllTerminal() {
+			if c.shutdown {
 				return
 			}
 		}

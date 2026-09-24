@@ -5,12 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"sort"
-	"sync"
 
 	"taskmaster/internal/config"
-	"taskmaster/internal/process"
+	"taskmaster/internal/controller"
 )
 
 var (
@@ -64,54 +61,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	pl := make([]string, 0, len(cfg.Programs))
-	for k := range cfg.Programs {
-		pl = append(pl, k)
+
+	c, err := controller.New(cfg)
+	if err != nil {
+		return err
 	}
-	sort.Strings(pl)
-	var wg sync.WaitGroup
-	for _, name := range pl {
-		p := cfg.Programs[name]
-		if !p.Autostart {
-			continue
-		}
-		var fout, ferr *os.File
-		fout, err = process.OpenRedirect(string(p.Stdout))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			continue
-		}
-		if p.Stderr == p.Stdout {
-			ferr = fout
-		} else {
-			ferr, err = process.OpenRedirect(string(p.Stderr))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				continue
-			}
-		}
-		for i := 0; i < p.Numprocs; i++ {
-			proc, err := process.New(&p, name, i, fout, ferr)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				break
-			}
-			err = proc.Start()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s: %v\n", proc.ID(), err)
-				break
-			}
-			wg.Go(func() {
-				ps, err := proc.Wait()
-				var exitErr *exec.ExitError
-				if err != nil && !errors.As(err, &exitErr) {
-					fmt.Fprintf(os.Stderr, "%s: wait: %v\n", proc.ID(), err)
-					return
-				}
-				fmt.Fprintf(os.Stderr, "%s: %s\n", proc.ID(), ps)
-			})
-		}
-	}
-	wg.Wait()
+	c.Run()
+
 	return nil
 }
