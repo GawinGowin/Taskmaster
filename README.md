@@ -4,15 +4,16 @@
 （supervisord 相当）。フォアグラウンドに留まり、制御シェルから状態を見たり start / stop したりできる。
 
 > [!NOTE]
-> **現状は起動と生死監視まで実装済み。** 設定を読み、`autostart` の program を起動して STARTING → RUNNING → EXITED の遷移を追う。
-> 再起動（`autorestart` / `startretries`）・停止（`stopsignal` / `stoptime`）・制御シェル・SIGHUP での再読み込み・
-> イベントログのファイル出力・`umask` の適用は未実装。
+> **現状は起動・再起動・停止まで実装済み。** 設定を読み、`autostart` の program を起動して STARTING → RUNNING → EXITED の遷移を追い、
+> `autorestart` / `exitcodes` で上げ直す。`starttime` 内に死んだ起動失敗は BACKOFF を挟んで再試行し、`startretries` を超えると FATAL。
+> SIGINT / SIGTERM を受けると全 program を `stopsignal` → `stoptime` 経過で SIGKILL の順に止めてから終了する（どちらもプロセスグループ宛）。
+> 制御シェル・SIGHUP での再読み込み（現状は受けて無視）・イベントログのファイル出力・`umask` の適用は未実装。
 
 ## ビルドと実行
 
 ```sh
 make build                                  # _output/bin/taskmasterd
-./_output/bin/taskmasterd -c <config.yaml>  # 起動し、全プロセスが終わるまで前面で待つ（遷移を stdout に表示）
+./_output/bin/taskmasterd -c <config.yaml>  # 起動し、SIGINT / SIGTERM で全プロセスを止めるまで前面で待つ（遷移を stdout に表示）
 ```
 
 | フラグ | 意味 |
