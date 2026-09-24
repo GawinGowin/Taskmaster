@@ -93,7 +93,7 @@ func (c *Controller) Run() {
 		}
 	}
 
-	for !c.isAllTerminal() {
+	for c.shutdown && c.isAllTerminal() {
 		switch ev := (<-c.events).(type) {
 		case evStartTimeElapsed:
 			p := c.byID[ev.id]
@@ -147,9 +147,6 @@ func (c *Controller) Run() {
 				if restart {
 					c.start(p)
 				}
-			}
-			if c.shutdown {
-				return
 			}
 
 		case evBackoffElapsed:
