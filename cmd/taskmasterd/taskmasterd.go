@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"taskmaster/internal/config"
@@ -12,6 +13,7 @@ import (
 
 var (
 	cfgPath     = flag.String("c", "taskmasterd.yaml", "path to config file")
+	logPath     = flag.String("l", "taskmasterd.log", "path to event log file")
 	showVersion = flag.Bool("V", false, "print version and exit")
 )
 
@@ -61,12 +63,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
 	c, err := controller.New(cfg)
 	if err != nil {
 		return err
 	}
-	c.Run()
+	logfile, err := os.OpenFile(*logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("log file: %w", err)
+	}
+	defer logfile.Close()
+	logger := slog.New(slog.NewJSONHandler(logfile, nil))
+
+	c.Run(logger)
 
 	return nil
 }

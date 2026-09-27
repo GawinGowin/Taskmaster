@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ type Controller struct {
 	log      []process.Transition
 	t0       time.Time
 	byID     map[string]*process.Process
+	logger   *slog.Logger
 }
 
 // バックオフ 500 msは暫定値
@@ -51,8 +53,12 @@ func New(cfg *config.Config) (*Controller, error) {
 	return &c, nil
 }
 
-func (c *Controller) Run() {
+func (c *Controller) Run(logger *slog.Logger) {
 	c.t0 = time.Now()
+	c.logger = logger
+	if c.logger == nil {
+		c.logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	defer signal.Stop(sigCh)
@@ -63,7 +69,7 @@ func (c *Controller) Run() {
 			case syscall.SIGINT, syscall.SIGTERM:
 				c.events <- evShutdown{sig: sig}
 			case syscall.SIGHUP:
-				fmt.Fprintf(os.Stderr, "received %s, ignored (reload not implemented yet)\n", sig)
+				c.logger.Info(fmt.Sprintf("received %s, ignored (reload not implemented yet)", sig))
 			}
 		}
 	}()
@@ -144,9 +150,9 @@ func (c *Controller) Run() {
 
 		case evShutdown:
 			if c.shutdown {
-				fmt.Fprintf(os.Stderr, "received %s, already shutting down\n", ev.sig)
+				c.logger.Info(fmt.Sprintf("received %s, already shutting down", ev.sig))
 			} else {
-				fmt.Fprintf(os.Stderr, "received %s, shutting down\n", ev.sig)
+				c.logger.Info(fmt.Sprintf("received %s, shutting down", ev.sig))
 				c.shutdown = true
 				for _, name := range c.order {
 					for _, p := range c.groups[name].procs {
@@ -172,7 +178,7 @@ func (c *Controller) to(p *process.Process, next process.State, why string) {
 	t := process.Transition{At: time.Since(c.t0), ID: p.ID(), From: p.State(), To: next, Why: why}
 	c.log = append(c.log, t)
 	p.SetState(next)
-	fmt.Println(t)
+	c.logger.Info(t.String())
 }
 
 func (c *Controller) start(p *process.Process) {
@@ -233,7 +239,6 @@ func (c *Controller) stop(p *process.Process) {
 
 	case process.Backoff:
 		c.to(p, process.Stopped, "backoff cancelled")
-		p.NextGen()
 	}
 }
 
@@ -254,9 +259,9 @@ func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
 		err = syscall.Kill(-pid, sig)
 	}
 	if errors.Is(err, syscall.ESRCH) {
-		fmt.Fprintf(os.Stderr, "%s (pid %d): unable to send %s to group, probably already exited: %v\n", id, pid, sig, err)
+		c.logger.Info(fmt.Sprintf("%s (pid %d): unable to send %s to group, probably already exited: %v", id, pid, sig, err))
 	} else if err != nil {
-		fmt.Fprintf(os.Stderr, "%s (pid %d): failed to send %s to group: %v\n", id, pid, sig, err)
+		c.logger.Info(fmt.Sprintf("%s (pid %d): failed to send %s to group: %v", id, pid, sig, err))
 	}
 }
 
