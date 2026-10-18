@@ -315,12 +315,15 @@ func (pg *ProgramGroup) closeFd() {
 	pg.stderr.Close()
 }
 
-func describe(ps *os.ProcessState) string {
+func death(ps *os.ProcessState, err error) slog.Attr {
+	if err != nil {
+		return slog.String("err", err.Error())
+	}
 	ws := ps.Sys().(syscall.WaitStatus)
 	if ws.Signaled() {
-		return "signal " + ws.Signal().String()
+		return slog.Int("signal", int(ws.Signal()))
 	}
-	return fmt.Sprintf("exit %d", ps.ExitCode())
+	return slog.Int("exitcode", ps.ExitCode())
 }
 
 // シグナル死は常に想定外。
