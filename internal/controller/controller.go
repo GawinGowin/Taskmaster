@@ -22,8 +22,6 @@ type Controller struct {
 	order    []string
 	events   chan event
 	shutdown bool
-	log      []process.Transition
-	t0       time.Time
 	byID     map[string]*process.Process
 	logger   *slog.Logger
 }
@@ -55,7 +53,6 @@ func New(cfg *config.Config) (*Controller, error) {
 }
 
 func (c *Controller) Run(logger *slog.Logger) {
-	c.t0 = time.Now()
 	c.logger = logger
 	if c.logger == nil {
 		c.logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
