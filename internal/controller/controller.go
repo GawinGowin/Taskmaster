@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -174,11 +175,20 @@ func (c *Controller) Run(logger *slog.Logger) {
 	}
 }
 
-func (c *Controller) to(p *process.Process, next process.State, why string) {
-	t := process.Transition{At: time.Since(c.t0), ID: p.ID(), From: p.State(), To: next, Why: why}
-	c.log = append(c.log, t)
+func (c *Controller) to(lvl slog.Level, p *process.Process, next process.State, attrs ...slog.Attr) {
+	from := p.State()
+	a := []slog.Attr{
+		slog.String("id", p.ID()),
+		slog.String("from", from.String()),
+		slog.String("to", next.String()),
+		slog.Uint64("gen", p.Gen()),
+	}
+	if (from == process.Starting || from == process.Running || from == process.Stopping) && p.Pid() != 0 {
+		a = append(a, slog.Int("pid", p.Pid()))
+	}
+	a = append(a, attrs...)
 	p.SetState(next)
-	c.logger.Info(t.String())
+	c.logger.LogAttrs(context.Background(), lvl, "transition", a...)
 }
 
 func (c *Controller) start(p *process.Process) {
