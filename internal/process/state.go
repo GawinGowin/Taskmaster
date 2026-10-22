@@ -1,10 +1,5 @@
 package process
 
-import (
-	"fmt"
-	"time"
-)
-
 type State int
 
 const (
