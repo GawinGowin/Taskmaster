@@ -91,7 +91,7 @@ func (c *Controller) Run(logger *slog.Logger) {
 				continue
 			}
 			p.ResetRetries()
-			c.to(p, process.Running, "")
+			c.to(slog.LevelInfo, p, process.Running, slog.Int("starttime", p.Spec().Starttime))
 
 		case evExited:
 			p := c.byID[ev.id]
@@ -102,20 +102,16 @@ func (c *Controller) Run(logger *slog.Logger) {
 				continue
 			}
 			var ok bool
-			var how string
-			if ev.err != nil {
-				ok = false
-				how = ev.err.Error()
-			} else {
+			how := death(ev.ps, ev.err)
+			if ev.err == nil {
 				ok = isExpected(ev.ps, p.Spec().Exitcodes)
-				how = describe(ev.ps)
 			}
 			switch p.State() {
 			case process.Starting:
 				c.startFailed(p, how)
 
 			case process.Stopping:
-				c.to(p, process.Stopped, "expected stop ("+how+")")
+				c.to(slog.LevelInfo, p, process.Stopped, how)
 
 			case process.Running:
 				restart := false
@@ -130,7 +126,11 @@ func (c *Controller) Run(logger *slog.Logger) {
 				if c.shutdown {
 					restart = false
 				}
-				c.to(p, process.Exited, fmt.Sprintf("%s (expected=%v)", how, ok))
+				lvl := slog.LevelInfo
+				if !ok {
+					lvl = slog.LevelWarn
+				}
+				c.to(lvl, p, process.Exited, how, slog.Bool("expected", ok))
 				if restart {
 					c.start(p)
 				}
@@ -191,10 +191,10 @@ func (c *Controller) to(lvl slog.Level, p *process.Process, next process.State, 
 func (c *Controller) start(p *process.Process) {
 	gen := p.NextGen()
 	id := p.ID()
-	c.to(p, process.Starting, fmt.Sprintf("gen=%d", gen))
+	c.to(slog.LevelInfo, p, process.Starting)
 	wait, err := p.Start()
 	if err != nil {
-		c.startFailed(p, err.Error())
+		c.startFailed(p, slog.String("err", err.Error()))
 		return
 	}
 
@@ -242,22 +242,29 @@ func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 }
 
 func (c *Controller) stop(p *process.Process) {
+	by := slog.String("by", "shutdown")
+
 	switch p.State() {
 	case process.Starting, process.Running:
 		gen := p.Gen()
 		id := p.ID()
-		stoptime := p.Spec().Stoptime
+
 		stopsignal := syscall.Signal(p.Spec().Stopsignal)
+		stoptime := p.Spec().Stoptime
 
-		c.to(p, process.Stopping, fmt.Sprintf("sent %s, kill in %ds", stopsignal, stoptime))
+		a := []slog.Attr{
+			slog.Int("stopsignal", int(stopsignal)),
+			slog.Int("stoptime", stoptime),
+			by,
+		}
+		c.to(slog.LevelInfo, p, process.Stopping, a...)
 		c.sendSignal(p, stopsignal)
-
 		time.AfterFunc(time.Duration(stoptime)*time.Second, func() {
 			c.events <- evStopTimeout{id: id, gen: gen}
 		})
 
 	case process.Backoff:
-		c.to(p, process.Stopped, "backoff cancelled")
+		c.to(slog.LevelInfo, p, process.Stopped, by)
 	}
 }
 
