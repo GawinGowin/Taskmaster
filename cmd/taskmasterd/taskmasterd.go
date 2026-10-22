@@ -72,7 +72,7 @@ func run() error {
 		return fmt.Errorf("log file: %w", err)
 	}
 	defer logfile.Close()
-	logger := slog.New(slog.NewJSONHandler(logfile, nil))
+	logger := slog.New(slog.NewTextHandler(logfile, nil))
 
 	c.Run(logger)
 
