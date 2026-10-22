@@ -58,21 +58,57 @@ tac taskmasterd.log | sed '/msg=startup/q' | tac             # 今回の起動�
 
 ## プロセスツリーを見る
 
-taskmasterd が起動した子と、その子が作った孫を木の形で見る。
+taskmasterd が起動した子と、その子が作った孫を木の形で見る。基本形は次の 1 行。
 
 ```sh
-pstree -pc $(pgrep -x taskmasterd)                  # taskmasterd の配下だけ。-c が無いと同じ枝がまとめて表示され、1 本ずつ数えられない
-ps -eo pid,ppid,pgid,sid,stat,cmd --forest          # 列を選べる。pgid / sid でプロセスグループの境界を確かめる
-ps -ef --forest                                     # 全体を罫線つきで（ps auxf も同じ）
-ps -o pid,ppid,pgid,cmd $(pgrep -g <pgid>)          # 子 1 本の一族（停止シグナルが届く範囲）
-grep -E 'PPid|Umask' /proc/<pid>/status             # 1 本の親と umask。子の自己申告に頼らずに確かめる
+pstree -pgT $(pgrep -x taskmasterd)
+```
+
+```
+taskmasterd(631136,631136)-+-bash(631147,631147)---sleep(758419,631147)
+                           |-bash(631149,631149)---sleep(758445,631149)
+                           |-bash(631159,631159)
+```
+
+括弧の中は `(pid,pgid)`。木の段がそのまま役割になる。
+
+| 段 | 何か | 見分け方 |
+|---|---|---|
+| 根 | taskmasterd 本体 | `pgrep -x taskmasterd` の pid |
+| 1 段目 | program のプロセス。`numprocs` 分が 1 本ずつ並ぶ（`healthy:0` `healthy:1` …） | **pid と pgid が同じ**（`Setpgid` で自分のグループのリーダーになっている） |
+| 2 段目以降 | 孫。program が自分で作ったもので、taskmasterd は直接は知らない | pgid が 1 段目の pid と同じ = その一族。停止シグナルはグループ宛なので孫まで届く |
+| `{taskmasterd}` | Go ランタイムのスレッド（プロセスではない） | `-T` を外すと子と並んで出る |
+
+| オプション | 効果 |
+|---|---|
+| `-p` | pid を出す |
+| `-c` | 同じ形の枝をまとめない。`-p` / `-g` を付ければ自動で効く。pid なしで見る（`pstree -T`）と `numprocs` 分が `4*[bash---sleep]` のように畳まれるので、そのときは足す |
+| `-g` | pgid を pid の隣に出す。グループの境界（停止シグナルが届く範囲）が見える |
+| `-T` | スレッドを隠す |
+| `-a` | 引数も出す（木は縦長の書式になる）。どの設定・どの `-l` で動いているか、子の `cmd` が分かる |
+| `-H <pid>` | その pid までの枝を太字で強調する。イベントログで見た pid を木の中で探すとき |
+| `-C age` | 起動してからの経過で色分けする（緑 1 分未満・黄 1 時間未満・赤それ以上）。再起動を繰り返している子が緑で目立つ |
+
+> [!NOTE]
+> **木には `name:index`（`healthy:0`）は出ない。** taskmasterd は子に名前も環境変数も足さないので、
+> `cmd` が同じ program どうしは木の上では区別できない。pid から `name:index` を引くのはイベントログの仕事で、
+> `grep -w pid=<pid> taskmasterd.log` で `msg=spawn id=healthy:0 gen=1 pid=<pid>` の行に当たる。
+> 設定の `env` で program ごとに違う値を渡しているなら、`ps e -o pid,args -p <pid>` でも見分けられる
+> （`scripts/test.sh` は `TM_NAME=healthy` などを渡している）。
+
+`ps` で見るとき:
+
+```sh
+ps -o pid,pgid,etime,stat,args --ppid $(pgrep -x taskmasterd)   # 1 段目だけ。etime が短い子は最近（再）起動した
+ps -o pid,pgid,etime,args --forest -s $(ps -o sid= -p $(pgrep -x taskmasterd))   # 端末のセッションごと木で
+ps -o pid,ppid,pgid,args $(pgrep -g <pgid>)                     # 子 1 本の一族（停止シグナルが届く範囲）
+grep -E 'PPid|Umask' /proc/<pid>/status                         # 1 本の親と umask。子の自己申告に頼らずに確かめる
 ```
 
 > [!NOTE]
-> **セッションやプロセスグループでは、taskmasterd の配下全体を絞り込めない。**
+> **セッションやプロセスグループでは、taskmasterd の配下だけを絞り込めない。**
 > taskmasterd は `setsid` しないので、`ps -s <sid>` では起動した端末のセッション全体が出る。
-> 子はそれぞれ `Setpgid` で自分のプロセスグループのリーダーになるので、`pgrep -g <pgid>` で見えるのは子 1 本とその孫だけ
-> （停止シグナルをグループ宛に送るための作り。孫まで一族ごと止まる）。
+> 子はそれぞれ自分のプロセスグループを持つので、`pgrep -g <pgid>` で見えるのは子 1 本とその孫だけ。
 > 配下全体を見るなら、taskmasterd の pid を起点に `pstree` を使う。
 
 > [!WARNING]
