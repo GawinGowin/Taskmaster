@@ -213,19 +213,31 @@ func (c *Controller) start(p *process.Process) {
 	})
 }
 
-func (c *Controller) startFailed(p *process.Process, why string) {
+func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 	sp := p.Spec()
-	gen := p.Gen()
 	retries := p.NextRetries()
-	id := p.ID()
-	c.to(p, process.Backoff, fmt.Sprintf("retry (%d/%d) %s", retries, sp.Startretries, why))
-	if retries > p.Spec().Startretries {
+	delay := time.Duration(retries) * backoffUnit
+
+	a := []slog.Attr{
+		how,
+		slog.Int("retries", retries),
+		slog.Int("startretries", sp.Startretries),
+	}
+	giveUp := retries > sp.Startretries
+	if !giveUp {
+		a = append(a, slog.Duration("delay", delay))
+	}
+	c.to(slog.LevelWarn, p, process.Backoff, a...)
+	if giveUp {
 		p.ResetRetries()
-		c.to(p, process.Fatal, fmt.Sprintf("retries exceed: %s", why))
+		c.to(slog.LevelError, p, process.Fatal,
+			slog.Int("retries", retries),
+			slog.Int("startretries", sp.Startretries),
+		)
 		return
 	}
-	time.AfterFunc(time.Duration(retries)*backoffUnit, func() {
-		c.events <- evBackoffElapsed{id: id, gen: gen}
+	time.AfterFunc(delay, func() {
+		c.events <- evBackoffElapsed{id: p.ID(), gen: p.Gen()}
 	})
 }
 
