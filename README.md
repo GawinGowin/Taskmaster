@@ -56,6 +56,28 @@ tac taskmasterd.log | sed '/msg=startup/q' | tac             # 今回の起動�
 
 `msg` の語彙・属性・レベルの付け方は wiki の[イベントログ](https://github.com/GawinGowin/Taskmaster/wiki/Event-Log)にある。
 
+## プロセスツリーを見る
+
+taskmasterd が起動した子と、その子が作った孫を木の形で見る。
+
+```sh
+pstree -pc $(pgrep -x taskmasterd)                  # taskmasterd の配下だけ。-c が無いと同じ枝がまとめて表示され、1 本ずつ数えられない
+ps -eo pid,ppid,pgid,sid,stat,cmd --forest          # 列を選べる。pgid / sid でプロセスグループの境界を確かめる
+ps -ef --forest                                     # 全体を罫線つきで（ps auxf も同じ）
+ps -o pid,ppid,pgid,cmd $(pgrep -g <pgid>)          # 子 1 本の一族（停止シグナルが届く範囲）
+grep -E 'PPid|Umask' /proc/<pid>/status             # 1 本の親と umask。子の自己申告に頼らずに確かめる
+```
+
+> [!NOTE]
+> **セッションやプロセスグループでは、taskmasterd の配下全体を絞り込めない。**
+> taskmasterd は `setsid` しないので、`ps -s <sid>` では起動した端末のセッション全体が出る。
+> 子はそれぞれ `Setpgid` で自分のプロセスグループのリーダーになるので、`pgrep -g <pgid>` で見えるのは子 1 本とその孫だけ
+> （停止シグナルをグループ宛に送るための作り。孫まで一族ごと止まる）。
+> 配下全体を見るなら、taskmasterd の pid を起点に `pstree` を使う。
+
+> [!WARNING]
+> `ps -g` はプロセスグループでは絞れない（procps ではセッションか実効グループ名で選ぶ）。プロセスグループで選ぶのは `pgrep -g`。
+
 ## 設定ファイル
 
 YAML で書く。1 ファイルにつき 1 つの YAML ドキュメント（`---` で区切った複数ドキュメントは受け付けない）。
