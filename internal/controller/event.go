@@ -1,6 +1,9 @@
 package controller
 
-import "os"
+import (
+	"os"
+	"syscall"
+)
 
 type event interface{ isEvent() }
 
@@ -22,12 +25,12 @@ type evStopTimeout struct {
 	id  string
 	gen uint64
 }
-type evShutdown struct {
-	sig os.Signal
+type evSignal struct {
+	sig syscall.Signal
 }
 
 func (evExited) isEvent()           {}
 func (evStartTimeElapsed) isEvent() {}
 func (evStopTimeout) isEvent()      {}
 func (evBackoffElapsed) isEvent()   {}
-func (evShutdown) isEvent()         {}
+func (evSignal) isEvent()           {}

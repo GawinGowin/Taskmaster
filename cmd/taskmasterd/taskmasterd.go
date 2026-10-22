@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -74,7 +75,14 @@ func run() error {
 	defer logfile.Close()
 	logger := slog.New(slog.NewTextHandler(logfile, nil))
 
+	self := os.Getpid()
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "startup", []slog.Attr{
+		slog.Int("self", self),
+		slog.String("version", version),
+		slog.String("config", *cfgPath),
+	}...)
 	c.Run(logger)
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "exit", slog.Int("self", self))
 
 	return nil
 }

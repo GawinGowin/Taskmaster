@@ -54,20 +54,15 @@ func New(cfg *config.Config) (*Controller, error) {
 
 func (c *Controller) Run(logger *slog.Logger) {
 	c.logger = logger
-	if c.logger == nil {
-		c.logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	}
 
 	sigCh := make(chan os.Signal, 1)
 	defer signal.Stop(sigCh)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		for sig := range sigCh {
-			switch sig {
-			case syscall.SIGINT, syscall.SIGTERM:
-				c.events <- evShutdown{sig: sig}
-			case syscall.SIGHUP:
-				c.logger.Info(fmt.Sprintf("received %s, ignored (reload not implemented yet)", sig))
+			s, ok := sig.(syscall.Signal)
+			if ok {
+				c.events <- evSignal{sig: s}
 			}
 		}
 	}()
@@ -146,17 +141,34 @@ func (c *Controller) Run(logger *slog.Logger) {
 			}
 			c.start(p)
 
-		case evShutdown:
-			if c.shutdown {
-				c.logger.Info(fmt.Sprintf("received %s, already shutting down", ev.sig))
-			} else {
-				c.logger.Info(fmt.Sprintf("received %s, shutting down", ev.sig))
-				c.shutdown = true
-				for _, name := range c.order {
-					for _, p := range c.groups[name].procs {
-						c.stop(p)
+		case evSignal:
+			signal := slog.Int("signal", int(ev.sig))
+			switch ev.sig {
+			case syscall.SIGINT, syscall.SIGTERM:
+				if c.shutdown {
+					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
+						signal,
+						slog.String("action", "ignore"),
+						slog.String("reason", "already_shutting_down"),
+					)
+				} else {
+					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
+						signal,
+						slog.String("action", "shutdown"),
+					)
+					c.shutdown = true
+					for _, name := range c.order {
+						for _, p := range c.groups[name].procs {
+							c.stop(p)
+						}
 					}
 				}
+			case syscall.SIGHUP:
+				c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
+					signal,
+					slog.String("action", "ignore"),
+					slog.String("reason", "not_implemented"),
+				)
 			}
 
 		case evStopTimeout:
@@ -167,6 +179,13 @@ func (c *Controller) Run(logger *slog.Logger) {
 			if p.Gen() != ev.gen || p.State() != process.Stopping {
 				continue
 			}
+			c.logger.LogAttrs(context.Background(), slog.LevelWarn, "kill", []slog.Attr{
+				slog.String("id", p.ID()),
+				slog.Uint64("gen", p.Gen()),
+				slog.Int("pid", p.Pid()),
+				slog.Int("signal", int(syscall.SIGKILL)),
+				slog.Int("stoptime", p.Spec().Stoptime),
+			}...)
 			c.sendSignal(p, syscall.SIGKILL)
 		}
 	}
@@ -197,6 +216,12 @@ func (c *Controller) start(p *process.Process) {
 		c.startFailed(p, slog.String("err", err.Error()))
 		return
 	}
+
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "spawn", []slog.Attr{
+		slog.String("id", id),
+		slog.Uint64("gen", gen),
+		slog.Int("pid", p.Pid()),
+	}...)
 
 	go func() {
 		ps, err := wait()
@@ -284,10 +309,20 @@ func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
 	if pid != 0 {
 		err = syscall.Kill(-pid, sig)
 	}
+	if err == nil {
+		return
+	}
+	a := []slog.Attr{
+		slog.String("id", id),
+		slog.Uint64("gen", p.Gen()),
+		slog.Int("pid", pid),
+		slog.Int("signal", int(sig)),
+		slog.String("err", err.Error()),
+	}
 	if errors.Is(err, syscall.ESRCH) {
-		c.logger.Info(fmt.Sprintf("%s (pid %d): unable to send %s to group, probably already exited: %v", id, pid, sig, err))
-	} else if err != nil {
-		c.logger.Info(fmt.Sprintf("%s (pid %d): failed to send %s to group: %v", id, pid, sig, err))
+		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal_error", a...)
+	} else {
+		c.logger.LogAttrs(context.Background(), slog.LevelError, "signal_error", a...)
 	}
 }
 
