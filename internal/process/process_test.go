@@ -195,7 +195,8 @@ func TestBuildCmd_Fresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if p.buildCmd() == p.buildCmd() {
+	first, second := p.buildCmd(), p.buildCmd()
+	if first == second {
 		t.Error("同じ *exec.Cmd を返している（再起動で Start() できない）")
 	}
 }
