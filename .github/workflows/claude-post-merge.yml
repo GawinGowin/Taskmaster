@@ -1,0 +1,101 @@
+name: Claude Post-merge Review
+
+# main に入った後で Claude に検証させ、問題があれば Issue で知らせる。マージは止めない。
+# claude-code-action は push イベントで起動できないので、CI の完了を workflow_run で受ける。
+# workflow_run はデフォルトブランチにあるワークフローファイルでしか発火しない。
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: claude-post-merge
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # fork では secret が無いので走らせない。cancelled / skipped は見ない。
+    if: >-
+      github.repository == 'GawinGowin/Taskmaster' &&
+      github.event.workflow_run.event == 'push' &&
+      contains(fromJSON('["success", "failure"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          # wiki は設計の文書。main が指しているコミットの版を取り、実装と突き合わせる。
+          submodules: true
+
+      # Claude が既存のテストを回して、疑いを確かめられるようにする。
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # workflow_run のペイロードには push の before が無い。
+      # 1 つ前の push で走った CI の head を起点にし、取れなければ直前のコミットにする。
+      - name: Find the previous push on main
+        id: base
+        run: |
+          base=$(gh run list --workflow CI --branch main --event push --limit 20 \
+            --json databaseId,headSha \
+            --jq '[.[] | select(.databaseId < ${{ github.event.workflow_run.id }})][0].headSha // empty')
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base=$(git rev-parse "${HEAD_SHA}~1")
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure the label exists
+        run: gh label create claude-audit --color D93F0B --description "Claude のマージ後レビューが起票した" --force
+
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            あなたは ${{ github.repository }} の main に入った変更を、マージ後に検証するレビュアーです。
+            Taskmaster は Go で書いた supervisord 風のプロセス管理デーモンで、fork / exec、シグナル、fd、設定のリロードを扱います。
+            コードは書き換えません。結果は Issue でだけ伝えます。
+
+            `wiki/` に設計の文書があります（`Home.md` が入口。ライフサイクル、並行性モデル、本家 supervisord との違い、テストシナリオなど）。
+            変更に関係するページを読み、実装がそこに書かれた振る舞いと合っているかを確かめてください。
+            対象範囲で wiki の参照先が動いていれば、`git -C wiki log` / `git -C wiki diff` で文書側の変更も読めます。
+
+            `go test` / `go vet` / `go build` は実行できます。疑いを起票する前に、既存のテストで確かめられるものは確かめてください
+            （例: `go test -race -run <名前> -count=20 ./internal/process`）。テストを書き足すことはできません。
+
+            - CI の結果: ${{ github.event.workflow_run.conclusion }}（${{ github.event.workflow_run.html_url }}）
+            - 対象の範囲: ${{ steps.base.outputs.sha }}..${{ github.event.workflow_run.head_sha }}
+
+            ## 手順
+
+            1. CI が failure なら、`gh run view ${{ github.event.workflow_run.id }} --log-failed` でログを読み、対象範囲の diff と照らして原因の見立てを立てる。落ちたテストを `-count` を増やして回し直し、flaky か確実に落ちるかを確かめて書く。main が壊れているので、この場合は必ず報告する。
+            2. CI が success なら、対象範囲の `git log` と `git diff` を読み、必要に応じて周辺のコードも読んで、次に当たるものだけを探す。
+               - バグ、仕様の取り違え
+               - 競合状態、goroutine のリーク
+               - fd・子プロセス・ゾンビのリーク、シグナルの取りこぼし
+               - エラーの握りつぶし
+               - `wiki/` に書かれた振る舞いと実装の食い違い（どちらが正しそうかも書く）
+               スタイル、命名、好みの問題、テストを足す提案だけのものは起票しない。確信が持てないものは書かない。
+            3. 報告することがなければ、何もせずに終了する。
+            4. 報告する前に `gh issue list --label claude-audit --state open` で既存の Issue を確かめる。同じ問題が既にあれば新しく作らず、`gh issue comment` で追記する。
+            5. 新しく起票するのは 1 回の実行で最大 1 件。指摘は本文に箇条書きでまとめる。
+               - タイトル: `post-merge: <要約>`
+               - ラベル: `claude-audit`
+               - 本文: 対象のコミット範囲、CI の実行 URL、指摘ごとにファイルと行・何が起きるか（入力や状態 → 結果）・根拠
+               - 日本語で書く
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git -C wiki log:*),Bash(git -C wiki diff:*),Bash(go test:*),Bash(go vet:*),Bash(go build:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*)"

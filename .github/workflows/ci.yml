@@ -1,0 +1,34 @@
+name: CI
+
+# マージを止めるのは、速くて結果が毎回同じ検査だけ。
+# Claude のレビューはここに置かず、claude-post-merge.yml でこの結果を受けて動かす。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - run: make vet
+      - run: make build
+      - run: make test
