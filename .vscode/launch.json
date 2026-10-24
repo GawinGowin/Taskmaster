@@ -2,12 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Package",
+      "name": "Taskmasterd Debug",
       "type": "go",
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}/cmd/taskmasterd/taskmasterd.go",
       "args": ["-c", "${workspaceFolder}/configs/taskmasterd.yaml"],
+      "preLaunchTask": "go_build"
+    },
+    {
+      "name": "Spawn Debug",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/taskmasterd/taskmasterd.go",
+      "args": ["__spawn", "022", "/usr/bin/ls", "--", "ls"],
       "preLaunchTask": "go_build"
     }
   ]
