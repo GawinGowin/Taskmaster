@@ -215,7 +215,7 @@ func TestCommand_EmptyList(t *testing.T) {
 // それ以外の位置の空要素は exec には渡せてしまうが、YAML に空を書く意図はまず無く、
 // 変数の展開結果が空だった（＝定義されているが値が空）ときに黙って空引数が 1 つ増える。
 // 判定に外の世界を見る必要がなく設定ファイルの中だけで閉じているので、
-// [[ADR-017]] 決定2 の線引きでは config 側で落とす対象。
+// config 側で落とす対象（設定の中だけで閉じる判定は config で落とす）。
 // null 要素（`- ~`）も同じ経路に落ちる。yaml.v3 は null ノードで UnmarshalYAML を
 // 呼ばないため EnvString のゼロ値（空文字）が残り、書き手の意図と無関係に空引数になる。
 func TestCommand_EmptyElement(t *testing.T) {

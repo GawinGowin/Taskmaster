@@ -66,7 +66,7 @@ func TestNew_EmptyCmd(t *testing.T) {
 }
 
 // TestBuildCmd_Wires は exec.Cmd の組み立てを見る。
-// Setpgid は M-6 の Kill(-pgid) の前提で、後から足せない（起動時にしか効かない）。
+// Setpgid は停止時の Kill(-pgid) の前提で、後から足せない（起動時にしか効かない）。
 func TestBuildCmd_Wires(t *testing.T) {
 	prog := minimal()
 	prog.Cmd = config.Command{"/bin/echo", "hello world"}
@@ -92,7 +92,7 @@ func TestBuildCmd_Wires(t *testing.T) {
 		t.Errorf("Dir = %q, want /tmp", cmd.Dir)
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
-		t.Errorf("Setpgid が立っていない: %#v （M-6 の Kill(-pgid) が届かなくなる）", cmd.SysProcAttr)
+		t.Errorf("Setpgid が立っていない: %#v （停止時の Kill(-pgid) が届かなくなる）", cmd.SysProcAttr)
 	}
 	if p.name != "healthy" || p.index != 1 {
 		t.Errorf("name/index = %q/%d, want healthy/1", p.name, p.index)
@@ -101,7 +101,7 @@ func TestBuildCmd_Wires(t *testing.T) {
 
 // TestNew_EnvInheritsAndOverrides は env の合成規則を固定する。
 //
-// 設定の env は**親の環境に足す**（M-2 §1）。置き換えにすると、env: を 1 行書いた
+// 設定の env は**親の環境に足す**。置き換えにすると、env: を 1 行書いた
 // 瞬間に子が PATH も HOME も失う。同名キーは設定が勝つ ——
 // os/exec が「重複キーは最後の値を使う」と決めている（Cmd.Env のドキュメント）ので、
 // 親の環境の後ろに足せばそうなる。
@@ -149,7 +149,7 @@ func TestBuildCmd_EnvNilInherits(t *testing.T) {
 }
 
 // TestNew_PinsSpec は起動時の spec を握ることを見る。
-// reload（M-7）で設定が差し替わっても、走行中のプロセスは起動時の値を見続ける。
+// reload で設定が差し替わっても、走行中のプロセスは起動時の値を見続ける。
 func TestNew_PinsSpec(t *testing.T) {
 	prog := minimal()
 	p, err, panicked := newProcess(t, "p", 0, prog)
@@ -168,7 +168,7 @@ func TestNew_PinsSpec(t *testing.T) {
 
 // TestNew_DoesNotBuildCmd は New が exec.Cmd を作らないことを見る。
 // Process は「hello:0 という枠」で、起動のたびに Start() が exec.Cmd を作り直す。
-// New で作ると、exec.Cmd は 1 回しか Start() できないので再起動（M-5）で詰まる。
+// New で作ると、exec.Cmd は 1 回しか Start() できないので再起動で詰まる。
 func TestNew_DoesNotBuildCmd(t *testing.T) {
 	p, err, panicked := newProcess(t, "p", 0, minimal())
 	if panicked != nil {
