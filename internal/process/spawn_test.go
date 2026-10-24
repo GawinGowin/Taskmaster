@@ -3,8 +3,10 @@ package process
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"taskmaster/internal/config"
 	"testing"
 )
@@ -120,4 +122,55 @@ func countPrefix(env []string, prefix string) int {
 		}
 	}
 	return n
+}
+
+// TestRunSpawn_ExitCodes は踏み台が失敗したときの終了コードを固定する。
+//
+// env(1) と同じく、踏み台自身の失敗（argv の契約が壊れている）は 125、コマンドが無ければ 127、
+// 見つかったが起動できなければ 126。親はこの値を遷移ログの exitcode= に出すので、
+// 子の stderr を見なくても失敗の種類が分かる。
+// RunSpawn は成功するとテストプロセスごと置き換わるので、失敗する場合だけを見る。
+// umask 不正のケースも存在しないパスにしておき、解析を素通りしても exec で止まるようにする。
+func TestRunSpawn_ExitCodes(t *testing.T) {
+	dir := t.TempDir()
+	notExec := filepath.Join(dir, "not-exec")
+	if err := os.WriteFile(notExec, []byte("echo hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name  string
+		umask string
+		path  string
+		want  int
+	}{
+		{name: "umask が 8 進でない", umask: "abc", path: "/nonexistent", want: 125},
+		{name: "パスが無い", umask: "022", path: "/nonexistent", want: 127},
+		{name: "実行権限が無い", umask: "022", path: notExec, want: 126},
+		{name: "ディレクトリ", umask: "022", path: dir, want: 126},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// RunSpawn は exec の前にこのプロセスの umask を書き換える。後続のテストに残さない。
+			old := syscall.Umask(0)
+			syscall.Umask(old)
+			t.Cleanup(func() { syscall.Umask(old) })
+
+			args := []string{"taskmasterd", SpawnMarker, tt.umask, tt.path, "--", "x"}
+			if !IsSpawned(args) {
+				t.Fatalf("IsSpawned(%q) = false（buildCmd と同じ並びのはず）", args)
+			}
+			code, err := RunSpawn(args)
+			if code != tt.want {
+				t.Errorf("終了コード = %d, want %d（err: %v）", code, tt.want, err)
+			}
+			if err == nil {
+				t.Fatal("err = nil, want エラー")
+			}
+			t.Logf("実際のエラー出力:\n%v", err)
+			// 125 以外は exec の失敗。子の stderr にしか残らないので、どのファイルかを必ず出す。
+			if tt.want != 125 && !strings.Contains(err.Error(), tt.path) {
+				t.Errorf("エラーにパスが入っていない: %q", err)
+			}
+		})
+	}
 }
