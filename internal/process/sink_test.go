@@ -12,11 +12,12 @@ import (
 )
 
 // newTestSink は temp ディレクトリのファイルを本番と同じフラグで開き、Sink で包む。
+// 本番で開くのは controller なので、フラグはここに書き写している。
 // Close はテスト側で呼ぶことがあるので、後始末では 2 回目の ErrClosed を許す。
 func newTestSink(t *testing.T) (*Sink, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "out.log")
-	f, err := OpenRedirect(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		t.Fatalf("出力先を開けない: %v", err)
 	}
