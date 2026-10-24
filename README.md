@@ -27,7 +27,7 @@ make build                                  # _output/bin/taskmasterd
 
 動作確認用の設定は `configs/` にある。
 
-- `configs/taskmasterd.yaml` — `scripts/test.sh` を被験プロセスにした 11 program。`${TM_ROOT}` を使うので、
+- `configs/taskmasterd.yaml` — `scripts/test.sh` を被験プロセスにした 11 program と、フルバッファの python（`fullbuf`）。`${TM_ROOT}` を使うので、
   `mise` を通さないときは `TM_ROOT=$PWD ./_output/bin/taskmasterd -c configs/taskmasterd.yaml`
 - `configs/minimal.yaml` — `./logs/` に書く最小例
 
@@ -51,10 +51,24 @@ tac taskmasterd.log | sed '/msg=startup/q' | tac             # 今回の起動�
 
 > [!IMPORTANT]
 > **イベントログは、設定の `stdout` / `stderr`（子の出力のリダイレクト先）とは別物。**
-> 子の出力ファイルは子が書き、taskmasterd は 1 バイトも書かない。逆にイベントログに子の出力は入らない。
+> 子の出力は下の「子の出力」のとおり出力ファイルにだけ書かれ、イベントログには入らない。
 > 2 つをつなぐ鍵は pid（`msg=spawn` の行が pid と `name:index` の対応を持つ）。
 
 `msg` の語彙・属性・レベルの付け方は wiki の[イベントログ](https://github.com/GawinGowin/Taskmaster/wiki/Event-Log)にある。
+
+## 子の出力
+
+子の fd 1 / 2 は taskmasterd が張ったパイプで、taskmasterd が読んで `stdout` / `stderr` のファイルに書く
+（`ls -l /proc/<子の pid>/fd/1` は `pipe:[...]` を指す）。
+
+- **中身は子が書いたバイト列のまま。** プレフィックスも時刻も付けない。JSON を 1 行ずつ吐く program はそのまま読める
+- **同じファイルへの書き手は taskmasterd の中の 1 つだけ。** `numprocs` の兄弟、同じ program の `stdout` と `stderr`、
+  別の program が同じパスを指しても 1 つにまとめるので、`write(2)` が行の途中で切れる処理系（python や C の stdio はパイプ相手に 8 KiB 単位で書く）でも行が混ざらない
+- **ファイルに出るまで最大 200ms 遅れる。** taskmasterd は 64 KiB まで溜めてから書く。終了するときは残りを書き出してから閉じる
+- **16 KiB を超える行も欠けずに書く**（読むときは 16 KiB ずつ切るが、ファイルには切れ目を入れない）
+- 開くときは追記（`O_APPEND`）。taskmasterd を起動し直しても前回の内容は消えない
+- 相対パスは taskmasterd を起動したディレクトリが基準（`workingdir` ではない）
+- `stdout` / `stderr` が空ならパイプを張らず、子には `/dev/null` を渡す
 
 ## プロセスツリーを見る
 
