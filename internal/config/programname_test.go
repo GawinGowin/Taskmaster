@@ -99,8 +99,8 @@ func TestConfig_RealConfigNamesPass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("実際の設定が読めなくなっている: %v", err)
 	}
-	if len(cfg.Programs) != 11 {
-		t.Errorf("program = %d 件, want 11（%v）", len(cfg.Programs), keysOf(cfg))
+	if len(cfg.Programs) != 12 {
+		t.Errorf("program = %d 件, want 12（%v）", len(cfg.Programs), keysOf(cfg))
 	}
 }
 

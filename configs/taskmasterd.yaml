@@ -229,3 +229,29 @@ programs:
       TM_INTERVAL: "1"
       TM_SPAM: "50"
       TM_STDERR_EVERY: "1"
+
+  # フルバッファの子（python は標準出力がパイプだと 8 KiB 単位で write(2) する）。
+  # 8 本が 1 ファイルを共有し、100 バイト × 500 行ずつ吐いて終わる。
+  # fd を直接渡すと write(2) が行の途中で切れ、隙間に別プロセスの塊が挟まって行が壊れる。
+  # 数え方: awk 'length($0) != 99 || !/^[0-9]{7} [0-9]{3} x{87}$/' /tmp/tm-fullbuf.stdout | wc -l が 0
+  fullbuf:
+    cmd:
+      - python3
+      - -c
+      - |
+        import os, time
+        for i in range(500):
+            print(f"{os.getpid():07d} {i:03d} " + "x" * 87)
+        time.sleep(2)
+    numprocs: 8
+    workingdir: /tmp
+    autostart: true
+    autorestart: never
+    exitcodes:
+      - 0
+    startretries: 0
+    starttime: 1
+    stopsignal: TERM
+    stoptime: 3
+    stdout: /tmp/tm-fullbuf.stdout
+    stderr: /tmp/tm-fullbuf.stderr
