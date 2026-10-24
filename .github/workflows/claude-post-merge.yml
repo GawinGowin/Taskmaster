@@ -61,6 +61,7 @@ jobs:
         run: gh label create claude-audit --color D93F0B --description "Claude のマージ後レビューが起票した" --force
 
       - name: Run Claude
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -98,4 +99,13 @@ jobs:
                - 本文: 対象のコミット範囲、CI の実行 URL、指摘ごとにファイルと行・何が起きるか（入力や状態 → 結果）・根拠
                - 日本語で書く
           claude_args: >-
+            --model claude-opus-5-5
             --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git -C wiki log:*),Bash(git -C wiki diff:*),Bash(go test:*),Bash(go vet:*),Bash(go build:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
+
+      - name: Upload the Claude transcript
+        if: always() && steps.claude.outputs.execution_file != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-transcript-${{ github.event.workflow_run.head_sha }}
+          path: ${{ steps.claude.outputs.execution_file }}
+          retention-days: 7
