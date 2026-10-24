@@ -18,7 +18,7 @@ type Sink struct {
 
 func NewSink(f *os.File) (*Sink, error) {
 	if f == nil {
-		return nil,  errors.New("file must not be nil")
+		return nil, errors.New("file must not be nil")
 	}
 	return &Sink{f: f, bw: bufio.NewWriterSize(f, 64*1024)}, nil
 }
@@ -62,7 +62,7 @@ func (s *Sink) Close() error {
 	if s.f == nil {
 		return os.ErrClosed
 	}
-	
+
 	if s.timer != nil {
 		s.timer.Stop()
 	}
