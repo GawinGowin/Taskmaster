@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"taskmaster/internal/config"
 	"testing"
+	"time"
 )
 
 // childGuard は踏み台を起動するテストが子に渡す印。
@@ -37,13 +38,9 @@ func TestMain(m *testing.M) {
 // runEnv は prog を Start() し、子の `env -0` の出力を並べ替えて返す。
 func runEnv(t *testing.T, prog *config.Program) []string {
 	t.Helper()
-	out, err := os.CreateTemp(t.TempDir(), "env")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer out.Close()
+	s, path := newTestSink(t)
 
-	p, err := New(prog, "p", 0, out, devNull(t))
+	p, err := New(prog, "p", 0, s, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -56,13 +53,37 @@ func runEnv(t *testing.T, prog *config.Program) []string {
 		t.Fatalf("子が失敗した: %v, %v", ps, err)
 	}
 
-	b, err := os.ReadFile(out.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := waitStable(t, path, 2*time.Second)
 	env := strings.Split(strings.TrimSuffix(string(b), "\x00"), "\x00")
 	slices.Sort(env)
 	return env
+}
+
+// waitStable は path が空でなくなり、Sink のフラッシュの周期（200ms）より長く
+// 大きさが変わらなくなるまで待って中身を返す。limit を過ぎたら Fatal。
+//
+// wait() は pump を待たないので、返った時点では出力がまだパイプか Sink のバッファにある。
+// pump の終わりは外から見えない（孫が書き端を握ると終わらないので、待つ口を作っていない）。
+func waitStable(t *testing.T, path string, limit time.Duration) []byte {
+	t.Helper()
+	const quiet = 300 * time.Millisecond
+	start := time.Now()
+	last, since := -1, time.Now()
+	for {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("読めない: %v", err)
+		}
+		if len(b) != last {
+			last, since = len(b), time.Now()
+		} else if len(b) > 0 && time.Since(since) >= quiet {
+			return b
+		}
+		if time.Since(start) > limit {
+			t.Fatalf("%v 待っても出力が落ち着かない（今 %d B）", limit, len(b))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestStart_EnvSameThroughSpawn は踏み台を経由しても Cmd.Env がそのまま届くことを見る。

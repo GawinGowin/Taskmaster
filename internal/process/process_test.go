@@ -5,29 +5,18 @@ import (
 	"strings"
 	"taskmaster/internal/config"
 	"testing"
+	"time"
 )
 
 // このファイルは内部テスト（package process）。exec.Cmd の組み立てが設計どおりか、
 // 外から観測できない場所を直接見るため。API の使い勝手を見るテストは外部パッケージで書く。
 
-// devNull は出力先として渡す *os.File を開く。New は渡されたものをそのまま
-// cmd.Stdout / cmd.Stderr に入れるので、テストでも本番と同じ「有効な *os.File」を渡す。
-func devNull(t *testing.T) *os.File {
-	t.Helper()
-	f, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatalf("/dev/null を開けない: %v", err)
-	}
-	t.Cleanup(func() { f.Close() })
-	return f
-}
-
 // newProcess は New を panic を握って呼ぶ。設定由来の値を添字で触る箇所があるので、
-// エラーを返すべき場面で落ちていないことを見分けられるようにする。
+// エラーを返すべき場面で落ちていないことを見分けられるようにする。出力は破棄（nil）にする。
 func newProcess(t *testing.T, name string, index int, p *config.Program) (got *Process, err error, panicked any) {
 	t.Helper()
 	defer func() { panicked = recover() }()
-	got, err = New(p, name, index, devNull(t), devNull(t))
+	got, err = New(p, name, index, nil, nil)
 	return got, err, nil
 }
 
@@ -221,46 +210,132 @@ func last(env []string, prefix string) string {
 	return out
 }
 
-// TestBuildCmd_WiresOutputFiles は渡した *os.File がそのまま cmd に入ることを見る。
-// 開くのは呼び出し側の仕事（numprocs が 2 以上のとき、同じファイルを全プロセスで共有するため）。
-func TestBuildCmd_WiresOutputFiles(t *testing.T) {
-	out, errF := devNull(t), devNull(t)
-	p, err := New(minimal(), "p", 0, out, errF)
+// TestBuildCmd_LeavesOutputNil は、宛先の Sink があっても buildCmd が Stdout / Stderr に触らないことを見る。
+// パイプは Start() が起動のたびに作る。ここで nil の *os.File を入れると「nil ではないインターフェース値」になり、
+// os/exec は閉じた fd を子に渡す（子が書き込みに失敗して終了コード 1。autorestart: unexpected が誤って発動する）。
+func TestBuildCmd_LeavesOutputNil(t *testing.T) {
+	out, _ := newTestSink(t)
+	errS, _ := newTestSink(t)
+	p, err := New(minimal(), "p", 0, out, errS)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	cmd := p.buildCmd()
-	if cmd.Stdout != out {
-		t.Errorf("cmd.Stdout に渡した *os.File が入っていない: %#v", cmd.Stdout)
+	if cmd.Stdout != nil {
+		t.Errorf("cmd.Stdout = %#v, want nil", cmd.Stdout)
 	}
-	if cmd.Stderr != errF {
-		t.Errorf("cmd.Stderr に渡した *os.File が入っていない: %#v", cmd.Stderr)
+	if cmd.Stderr != nil {
+		t.Errorf("cmd.Stderr = %#v, want nil", cmd.Stderr)
 	}
 }
 
-// TestNew_NilFile は nil の *os.File を弾くことを見る。
-//
-// cmd.Stdout は io.Writer なので、*os.File 型の nil を入れると
-// 「nil ではないインターフェース値」になる。os/exec はそれを *os.File として扱い、
-// Fd() が -1 を返すため、閉じた fd を渡したのと同じ状態になる
-// （子が書き込みに失敗して終了コード 1。autorestart: unexpected が誤って発動する）。
-// New が受け取った時点で弾けば、この状態は作れない。
-func TestNew_NilFile(t *testing.T) {
-	for _, tt := range []struct {
-		name      string
-		out, errF *os.File
-	}{
-		{name: "stdout が nil", out: nil, errF: devNull(t)},
-		{name: "stderr が nil", out: devNull(t), errF: nil},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := New(minimal(), "p", 0, tt.out, tt.errF)
-			if err == nil {
-				t.Fatal("err = nil, want エラー（nil の *os.File は閉じた fd と同じ症状になる）")
-			}
-			t.Logf("実際のエラー出力:\n%v", err)
-		})
+// startAndWait は p を起動して終わるまで待ち、子が成功したかを返す。
+func startAndWait(t *testing.T, p *Process) bool {
+	t.Helper()
+	wait, err := p.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
 	}
+	ps, err := wait()
+	if err != nil && ps == nil {
+		t.Fatalf("wait: %v", err)
+	}
+	return ps.Success()
+}
+
+// shell は sh -c で script を走らせる Program を返す。
+func shell(script string) *config.Program {
+	return &config.Program{Cmd: config.Command{"/bin/sh", "-c", script}}
+}
+
+// TestStart_Discard は、宛先が nil（破棄）でも子が stdout / stderr に書けることを見る。
+// 破棄のときは cmd.Stdout を nil のまま残し、os/exec に /dev/null を開かせる。
+// nil の *os.File を入れてしまうと、子は閉じた fd に書いて失敗する。
+func TestStart_Discard(t *testing.T) {
+	p, err := New(shell("echo out && echo err >&2"), "p", 0, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !startAndWait(t, p) {
+		t.Error("子が失敗した（破棄のはずの fd に書けていない）")
+	}
+}
+
+// TestStart_ToSink は、子の stdout と stderr が別々のパイプを通ってそれぞれの Sink に届くことを見る。
+func TestStart_ToSink(t *testing.T) {
+	out, outPath := newTestSink(t)
+	errS, errPath := newTestSink(t)
+	p, err := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !startAndWait(t, p) {
+		t.Fatal("子が失敗した")
+	}
+	if got := string(waitStable(t, outPath, 2*time.Second)); got != "out\n" {
+		t.Errorf("stdout = %q, want %q", got, "out\n")
+	}
+	if got := string(waitStable(t, errPath, 2*time.Second)); got != "err\n" {
+		t.Errorf("stderr = %q, want %q", got, "err\n")
+	}
+}
+
+// openFds は今このプロセスが開いている fd の数を返す。
+func openFds(t *testing.T) int {
+	t.Helper()
+	ents, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatalf("/proc/self/fd を読めない: %v", err)
+	}
+	return len(ents)
+}
+
+// TestStart_ClosesPipes は、起動に成功しても失敗しても、パイプの fd が親に残らないことを見る。
+//
+// 成功: 親が書き端を閉じていれば、子が死ぬと pump に EOF が来て読み端も閉じる。
+// 閉じ忘れると親も書き手として残り、EOF が来ないので再起動のたびに 2 本ずつ積もる。
+// 失敗: pump を起こさないので、読み端と書き端の両方を Start() が閉じる。
+// 存在しないコマンドは LookPath の失敗（cmd.Err）で fork の前に返るので、ここが抜けやすい。
+func TestStart_ClosesPipes(t *testing.T) {
+	out, _ := newTestSink(t)
+	errS, _ := newTestSink(t)
+
+	// 最初の os.Pipe() でランタイムが poller の fd を開くので、数える前に 1 回起動しておく。
+	ok, err := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	startAndWait(t, ok)
+	ng, err := New(&config.Program{Cmd: config.Command{"/nonexistent/taskmaster-test"}}, "p", 0, out, errS)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	t.Run("成功", func(t *testing.T) {
+		before := openFds(t)
+		for range 5 {
+			startAndWait(t, ok)
+		}
+		// pump が EOF を読んで読み端を閉じるまでは待つ。
+		deadline := time.Now().Add(2 * time.Second)
+		for openFds(t) > before && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := openFds(t); got != before {
+			t.Errorf("fd が %d 本から %d 本になった（書き端を閉じていない）", before, got)
+		}
+	})
+	t.Run("失敗", func(t *testing.T) {
+		before := openFds(t)
+		for range 5 {
+			if _, err := ng.Start(); err == nil {
+				t.Fatal("存在しないコマンドで Start が成功した")
+			}
+		}
+		if got := openFds(t); got != before {
+			t.Errorf("fd が %d 本から %d 本になった（起動に失敗したときにパイプを閉じていない）", before, got)
+		}
+	})
 }
 
 // TestOpenRedirect_Append は出力先を O_APPEND で開くことを固定する。

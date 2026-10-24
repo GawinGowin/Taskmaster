@@ -21,22 +21,16 @@ type Process struct {
 	proc    *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
 	index   int
 	name    string
-	stdout  *os.File
-	stderr  *os.File
+	stdout  *Sink // nil なら破棄
+	stderr  *Sink // nil なら破棄
 	state   State
 	gen     uint64
 	retries int
 }
 
-func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.File) (*Process, error) {
+func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) (*Process, error) {
 	if len(p.Cmd) == 0 {
 		return nil, fmt.Errorf("%s:%d: cmd must not be empty", name, index)
-	}
-	if stdout == nil {
-		return nil, fmt.Errorf("%s:%d: stdout must not be nil", name, index)
-	}
-	if stderr == nil {
-		return nil, fmt.Errorf("%s:%d: stderr must not be nil", name, index)
 	}
 
 	return &Process{
@@ -89,8 +83,6 @@ func (p *Process) buildCmd() (cmd *exec.Cmd) {
 	}
 	cmd.Dir = string(p.prog.Workingdir)
 	cmd.Env = envSlice(p.prog.Env)
-	cmd.Stdout = p.stdout
-	cmd.Stderr = p.stderr
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return cmd
@@ -101,11 +93,47 @@ func (p *Process) buildCmd() (cmd *exec.Cmd) {
 // cmd.Wait() が書き込む cmd.ProcessState をループ側から読めないようにするため。
 func (p *Process) Start() (wait func() (*os.ProcessState, error), err error) {
 	cmd := p.buildCmd()
-	if err := cmd.Start(); err != nil {
+
+	var w1, r1 *os.File
+	var w2, r2 *os.File
+	if p.stdout != nil {
+		r1, w1, err = os.Pipe()
+
+		if err != nil {
+			return nil, fmt.Errorf("stdout pipe: %w", err)
+		}
+
+		cmd.Stdout = w1
+	}
+	if p.stderr != nil {
+		r2, w2, err = os.Pipe()
+
+		if err != nil {
+			w1.Close()
+			r1.Close()
+			return nil, fmt.Errorf("stderr pipe: %w", err)
+		}
+
+		cmd.Stderr = w2
+	}
+	err = cmd.Start()
+	w1.Close()
+	w2.Close()
+	if err != nil {
+		r1.Close()
+		r2.Close()
 		p.proc = nil
 		return nil, err
 	}
+
 	p.proc = cmd.Process
+	if r1 != nil {
+		go pump(r1, p.stdout)
+	}
+	if r2 != nil {
+		go pump(r2, p.stderr)
+	}
+
 	return func() (*os.ProcessState, error) {
 		err := cmd.Wait()
 		return cmd.ProcessState, err
@@ -175,4 +203,19 @@ func OpenRedirect(path string) (*os.File, error) {
 		return os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	}
 	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+}
+
+func OpenSink(path string) (*Sink, error) {
+	if path == "" {
+		return nil, nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	sink, err := NewSink(f)
+	if err != nil {
+		return nil, err
+	}
+	return sink, nil
 }
