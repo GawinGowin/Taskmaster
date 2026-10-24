@@ -187,10 +187,11 @@ programs:
       TM_IGNORE_STOP: "1"
 
   # --- 出力の扱い -----------------------------------------------------------
+  # umask を書かない唯一の program。踏み台を通らない直接経路を踏ませ、
+  # 起動側の umask を継承することを確かめる（ほかは全部踏み台経由）。
   noisy:
     cmd: "${TM_ROOT}/scripts/test.sh"
     numprocs: 1
-    umask: 022
     workingdir: /tmp
     autostart: true
     autorestart: unexpected
