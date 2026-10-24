@@ -290,6 +290,22 @@ func openFds(t *testing.T) int {
 	return len(ents)
 }
 
+// settledFds は fd の本数が 100ms 変わらなくなるまで待って返す。
+// pump は wait() が返った後に EOF を読んで読み端を閉じるので、直前に子を起動していると本数はまだ減っていく。
+func settledFds(t *testing.T) int {
+	t.Helper()
+	n, since := openFds(t), time.Now()
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		if m := openFds(t); m != n {
+			n, since = m, time.Now()
+		} else if time.Since(since) >= 100*time.Millisecond {
+			break
+		}
+	}
+	return n
+}
+
 // TestStart_ClosesPipes は、起動に成功しても失敗しても、パイプの fd が親に残らないことを見る。
 //
 // 成功: 親が書き端を閉じていれば、子が死ぬと pump に EOF が来て読み端も閉じる。
@@ -311,28 +327,24 @@ func TestStart_ClosesPipes(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
+	// 閉じ忘れなら本数は増える。減る分（ランタイムの都合など）は見ない。
 	t.Run("成功", func(t *testing.T) {
-		before := openFds(t)
+		before := settledFds(t)
 		for range 5 {
 			startAndWait(t, ok)
 		}
-		// pump が EOF を読んで読み端を閉じるまでは待つ。
-		deadline := time.Now().Add(2 * time.Second)
-		for openFds(t) > before && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		if got := openFds(t); got != before {
+		if got := settledFds(t); got > before {
 			t.Errorf("fd が %d 本から %d 本になった（書き端を閉じていない）", before, got)
 		}
 	})
 	t.Run("失敗", func(t *testing.T) {
-		before := openFds(t)
+		before := settledFds(t)
 		for range 5 {
 			if _, err := ng.Start(); err == nil {
 				t.Fatal("存在しないコマンドで Start が成功した")
 			}
 		}
-		if got := openFds(t); got != before {
+		if got := openFds(t); got > before {
 			t.Errorf("fd が %d 本から %d 本になった（起動に失敗したときにパイプを閉じていない）", before, got)
 		}
 	})
