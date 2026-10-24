@@ -102,10 +102,11 @@ jobs:
             --model claude-opus-5-5
             --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git -C wiki log:*),Bash(git -C wiki diff:*),Bash(go test:*),Bash(go vet:*),Bash(go build:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
 
+      # Artifact の名前は run の中で重ねられず、再実行は同じ run になるので、試行の番号を付けて分ける。
       - name: Upload the Claude transcript
         if: always() && steps.claude.outputs.execution_file != ''
         uses: actions/upload-artifact@v4
         with:
-          name: claude-transcript-${{ github.event.workflow_run.head_sha }}
+          name: claude-transcript-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           path: ${{ steps.claude.outputs.execution_file }}
           retention-days: 7
