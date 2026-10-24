@@ -379,7 +379,7 @@ func (c *Controller) sinkFor(path string) (*process.Sink, error) {
 	if s, ok := c.sinks[abs]; ok {
 		return s, nil
 	}
-	f, err := openRedirect(abs)
+	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err
 	}
@@ -390,13 +390,6 @@ func (c *Controller) sinkFor(path string) (*process.Sink, error) {
 	}
 	c.sinks[abs] = s
 	return s, nil
-}
-
-func openRedirect(path string) (*os.File, error) {
-	if path == "" {
-		return os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	}
-	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 }
 
 func death(ps *os.ProcessState, err error) slog.Attr {
