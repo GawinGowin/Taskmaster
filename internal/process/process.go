@@ -12,6 +12,10 @@ import (
 
 const SpawnMarker = "__spawn"
 
+// 今動いているバイナリそのものを指す。os.Executable() などでパスに直すと、
+// 実行中にバイナリが置き換えられたとき新しい方が起動してしまう。
+var spawnHelper = "/proc/self/exe"
+
 type Process struct {
 	prog    config.Program
 	proc    *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
@@ -71,11 +75,13 @@ func RunSpawn(args []string) (int, error) {
 func (p *Process) buildCmd() (cmd *exec.Cmd) {
 	cmd = exec.Command(p.prog.Cmd[0], p.prog.Cmd[1:]...)
 
+	// umask 指定時は自分自身を踏み台に再 exec する: <argv0> __spawn <8進umask> <解決済みパス> -- <元の argv...>
+	// cmd を作り直さないのは、LookPath の失敗（cmd.Err）を残して fork 前に失敗させるため。
 	m := p.prog.Umask
 	if m != nil {
 		path := cmd.Path
 		args := cmd.Args
-		cmd.Path = "/proc/self/exe"
+		cmd.Path = spawnHelper
 		cmd.Args = []string{
 			os.Args[0], SpawnMarker, strconv.FormatInt(int64(*m), 8), path, "--",
 		}
