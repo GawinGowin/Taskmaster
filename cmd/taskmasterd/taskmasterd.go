@@ -70,13 +70,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	logfile, err := os.OpenFile(*logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("log file: %w", err)
+	}
 	c, err := controller.New(cfg)
 	if err != nil {
 		return err
-	}
-	logfile, err := os.OpenFile(*logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return errors.Join(fmt.Errorf("log file: %w", err), c.Close())
 	}
 	defer logfile.Close()
 	logger := slog.New(slog.NewTextHandler(logfile, nil))
