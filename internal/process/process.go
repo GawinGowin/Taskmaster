@@ -196,26 +196,3 @@ func envSlice(m map[string]string) []string {
 	}
 	return out
 }
-
-// temporary
-func OpenRedirect(path string) (*os.File, error) {
-	if path == "" {
-		return os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	}
-	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-}
-
-func OpenSink(path string) (*Sink, error) {
-	if path == "" {
-		return nil, nil
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	sink, err := NewSink(f)
-	if err != nil {
-		return nil, err
-	}
-	return sink, nil
-}

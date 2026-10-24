@@ -76,7 +76,7 @@ func run() error {
 	}
 	logfile, err := os.OpenFile(*logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
-		return fmt.Errorf("log file: %w", err)
+		return errors.Join(fmt.Errorf("log file: %w", err), c.Close())
 	}
 	defer logfile.Close()
 	logger := slog.New(slog.NewTextHandler(logfile, nil))
@@ -88,7 +88,11 @@ func run() error {
 		slog.String("config", *cfgPath),
 	}...)
 	c.Run(logger)
-	logger.LogAttrs(context.Background(), slog.LevelInfo, "exit", slog.Int("self", self))
 
+	err = c.Close()
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "exit", slog.Int("self", self))
+	if err != nil {
+		return fmt.Errorf("output: %w", err)
+	}
 	return nil
 }

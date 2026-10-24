@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ type Controller struct {
 	shutdown bool
 	byID     map[string]*process.Process
 	logger   *slog.Logger
+	sinks    map[string]*process.Sink
 }
 
 // バックオフ 500 msは暫定値
@@ -35,14 +37,13 @@ func New(cfg *config.Config) (*Controller, error) {
 	c.groups = make(map[string]*ProgramGroup, len(c.order))
 	c.events = make(chan event, 64) // バッファ数 64 は暫定値
 	c.byID = make(map[string]*process.Process)
+	c.sinks = make(map[string]*process.Sink)
+
 	for _, name := range c.order {
 		program := cfg.Programs[name]
-		group, err := newProgramGroup(&program, name)
+		group, err := c.newProgramGroup(&program, name)
 		if err != nil {
-			for _, pg := range c.groups {
-				pg.closeFd()
-			}
-			return nil, err
+			return nil, errors.Join(err, c.Close())
 		}
 		c.groups[name] = group
 		for _, p := range group.procs {
@@ -50,6 +51,17 @@ func New(cfg *config.Config) (*Controller, error) {
 		}
 	}
 	return &c, nil
+}
+
+func (c *Controller) Close() error {
+	var errs []error
+	for path, s := range c.sinks {
+		if err := s.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, err))
+		}
+	}
+	clear(c.sinks)
+	return errors.Join(errs...)
 }
 
 func (c *Controller) Run(logger *slog.Logger) {
@@ -328,33 +340,27 @@ func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
 
 type ProgramGroup struct {
 	spec   config.Program // type Process も同様に値として持つので暫定で持たせる
-	stdout *os.File
-	stderr *os.File
+	stdout *process.Sink
+	stderr *process.Sink
 	procs  []*process.Process
 }
 
-func newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
+func (c *Controller) newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
 	var pg ProgramGroup
 	pg.spec = *p
 
 	var err error
-	pg.stdout, err = process.OpenRedirect(string(p.Stdout))
+	pg.stdout, err = c.sinkFor(string(p.Stdout))
 	if err != nil {
 		return nil, fmt.Errorf("%s: stdout: %w", name, err)
 	}
-	if p.Stderr == p.Stdout {
-		pg.stderr = pg.stdout
-	} else {
-		pg.stderr, err = process.OpenRedirect(string(p.Stderr))
-		if err != nil {
-			pg.stdout.Close()
-			return nil, fmt.Errorf("%s: stderr: %w", name, err)
-		}
+	pg.stderr, err = c.sinkFor(string(p.Stderr))
+	if err != nil {
+		return nil, fmt.Errorf("%s: stderr: %w", name, err)
 	}
 	for i := 0; i < p.Numprocs; i++ {
 		proc, err := process.New(p, name, i, pg.stdout, pg.stderr)
 		if err != nil {
-			pg.closeFd()
 			return nil, err
 		}
 		pg.procs = append(pg.procs, proc)
@@ -362,11 +368,35 @@ func newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
 	return &pg, nil
 }
 
-func (pg *ProgramGroup) closeFd() {
-	if pg.stdout != pg.stderr {
-		pg.stdout.Close()
+func (c *Controller) sinkFor(path string) (*process.Sink, error) {
+	if path == "" {
+		return nil, nil
 	}
-	pg.stderr.Close()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	if s, ok := c.sinks[abs]; ok {
+		return s, nil
+	}
+	f, err := openRedirect(abs)
+	if err != nil {
+		return nil, err
+	}
+	s, err := process.NewSink(f)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	c.sinks[abs] = s
+	return s, nil
+}
+
+func openRedirect(path string) (*os.File, error) {
+	if path == "" {
+		return os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	}
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 }
 
 func death(ps *os.ProcessState, err error) slog.Attr {
