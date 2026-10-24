@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 
 	"taskmaster/internal/config"
 )
+
+const SpawnMarker = "__spawn"
 
 type Process struct {
 	prog    config.Program
@@ -44,8 +47,40 @@ func New(p *config.Program, name string, index int, stdout *os.File, stderr *os.
 	}, nil
 }
 
+func IsSpawned(args []string) bool {
+	return len(args) >= 6 && args[1] == SpawnMarker && args[4] == "--"
+}
+
+func RunSpawn(args []string) (int, error) {
+	mask, err := strconv.ParseUint(args[2], 8, 32)
+	if err != nil {
+		return 125, fmt.Errorf("%s: %w", SpawnMarker, err)
+	}
+	syscall.Umask(int(mask))
+	path := args[3]
+	argv := args[5:]
+	env := os.Environ()
+	err = syscall.Exec(path, argv, env)
+	code := 126
+	if err == syscall.ENOENT {
+		code = 127
+	}
+	return code, fmt.Errorf("%s: %w", SpawnMarker, &os.PathError{Op: "exec", Path: path, Err: err})
+}
+
 func (p *Process) buildCmd() (cmd *exec.Cmd) {
 	cmd = exec.Command(p.prog.Cmd[0], p.prog.Cmd[1:]...)
+
+	m := p.prog.Umask
+	if m != nil {
+		path := cmd.Path
+		args := cmd.Args
+		cmd.Path = "/proc/self/exe"
+		cmd.Args = []string{
+			os.Args[0], SpawnMarker, strconv.FormatInt(int64(*m), 8), path, "--",
+		}
+		cmd.Args = append(cmd.Args, args...)
+	}
 	cmd.Dir = string(p.prog.Workingdir)
 	cmd.Env = envSlice(p.prog.Env)
 	cmd.Stdout = p.stdout

@@ -10,6 +10,7 @@ import (
 
 	"taskmaster/internal/config"
 	"taskmaster/internal/controller"
+	"taskmaster/internal/process"
 )
 
 var (
@@ -36,6 +37,11 @@ func usage() {
 }
 
 func main() {
+	if process.IsSpawned(os.Args) {
+		exitcode, err := process.RunSpawn(os.Args)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(exitcode)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		var ue *usageError
