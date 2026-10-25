@@ -29,8 +29,28 @@ type evSignal struct {
 	sig syscall.Signal
 }
 
+type evRequest struct {
+	cmd     Command
+	targets []string
+	reply   chan<- []string
+}
+
+type Command int
+
+const (
+	CmdStart Command = iota
+	CmdStop
+	CmdStopall
+	CmdRestart
+	CmdStatus
+	CmdReload
+	CmdQuit
+	CmdHelp
+)
+
 func (evExited) isEvent()           {}
 func (evStartTimeElapsed) isEvent() {}
 func (evStopTimeout) isEvent()      {}
 func (evBackoffElapsed) isEvent()   {}
 func (evSignal) isEvent()           {}
+func (evRequest) isEvent()          {}
