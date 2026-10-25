@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 type Controller struct {
 	groups   map[string]*ProgramGroup
 	order    []string
+	names    atomic.Pointer[[]string]
 	events   chan event
 	shutdown bool
 	byID     map[string]*process.Process
@@ -34,6 +36,7 @@ const backoffUnit = 500 * time.Millisecond
 func New(cfg *config.Config) (*Controller, error) {
 	var c Controller
 	c.order = slices.Sorted(maps.Keys(cfg.Programs))
+	c.publishNames()
 	c.groups = make(map[string]*ProgramGroup, len(c.order))
 	c.events = make(chan event, 64) // バッファ数 64 は暫定値
 	c.byID = make(map[string]*process.Process)
@@ -51,6 +54,18 @@ func New(cfg *config.Config) (*Controller, error) {
 		}
 	}
 	return &c, nil
+}
+
+func (c *Controller) publishNames() {
+	names := slices.Clone(c.order)
+	c.names.Store(&names)
+}
+
+func (c *Controller) Names() []string {
+	if p := c.names.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
 func (c *Controller) Close() error {
