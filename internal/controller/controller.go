@@ -190,12 +190,7 @@ func (c *Controller) Run(logger *slog.Logger) {
 						signal,
 						slog.String("action", "shutdown"),
 					)
-					c.shutdown = true
-					for _, name := range c.order {
-						for _, p := range c.groups[name].procs {
-							c.stop(p, "shutdown")
-						}
-					}
+					c.beginShutdown()
 				}
 			case syscall.SIGHUP:
 				c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
@@ -221,6 +216,13 @@ func (c *Controller) Run(logger *slog.Logger) {
 				slog.Int("stoptime", p.Spec().Stoptime),
 			}...)
 			c.sendSignal(p, syscall.SIGKILL)
+
+		case evRequest:
+			switch ev.cmd {
+			case CmdQuit:
+				c.beginShutdown()
+			}
+
 		}
 	}
 }
@@ -324,6 +326,15 @@ func (c *Controller) stop(p *process.Process, how string) {
 
 	case process.Backoff:
 		c.to(slog.LevelInfo, p, process.Stopped, by)
+	}
+}
+
+func (c *Controller) beginShutdown() {
+	c.shutdown = true
+	for _, name := range c.order {
+		for _, p := range c.groups[name].procs {
+			c.stop(p, "shutdown")
+		}
 	}
 }
 

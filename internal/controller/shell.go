@@ -68,6 +68,11 @@ func (s *Shell) Run() error {
 		case err == readline.ErrInterrupt: // Ctrl-C
 			continue
 		case err == io.EOF: // Ctrl-D
+			s.events <- evRequest{
+				cmd:     CmdQuit,
+				targets: nil,
+				reply:   nil,
+			}
 			return nil // todo
 		case err != nil:
 			return err
