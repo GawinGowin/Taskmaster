@@ -186,7 +186,7 @@ func (c *Controller) Run(logger *slog.Logger) {
 					c.shutdown = true
 					for _, name := range c.order {
 						for _, p := range c.groups[name].procs {
-							c.stop(p)
+							c.stop(p, "shutdown")
 						}
 					}
 				}
@@ -293,8 +293,8 @@ func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 	})
 }
 
-func (c *Controller) stop(p *process.Process) {
-	by := slog.String("by", "shutdown")
+func (c *Controller) stop(p *process.Process, how string) {
+	by := slog.String("by", how)
 
 	switch p.State() {
 	case process.Starting, process.Running:
