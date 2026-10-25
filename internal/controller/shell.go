@@ -36,15 +36,17 @@ func NewShell(events chan<- event, done <-chan struct{}, names func() []string) 
 
 func newCompleter(names func() []string) *readline.PrefixCompleter {
 	programNames := func(line string) []string {
-		return names()
+		return append([]string{"all"}, names()...)
 	}
 
+	args := readline.PcItemDynamic(programNames)
+	args.Children = []readline.PrefixCompleterInterface{args}
+
 	return readline.NewPrefixCompleter(
-		readline.PcItem("start", readline.PcItemDynamic(programNames)),
-		readline.PcItem("stop", readline.PcItemDynamic(programNames)),
-		readline.PcItem("stopall"),
-		readline.PcItem("restart", readline.PcItemDynamic(programNames)),
-		readline.PcItem("status", readline.PcItemDynamic(programNames)),
+		readline.PcItem("start", args),
+		readline.PcItem("stop", args),
+		readline.PcItem("restart", args),
+		readline.PcItem("status", args),
 		readline.PcItem("reload"),
 		readline.PcItem("quit"),
 		readline.PcItem("help"),

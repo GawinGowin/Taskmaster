@@ -40,7 +40,6 @@ type Command int
 const (
 	CmdStart Command = iota
 	CmdStop
-	CmdStopall
 	CmdRestart
 	CmdStatus
 	CmdReload
