@@ -24,6 +24,7 @@ type Controller struct {
 	order    []string
 	names    atomic.Pointer[[]string]
 	events   chan event
+	done     chan struct{}
 	shutdown bool
 	byID     map[string]*process.Process
 	logger   *slog.Logger
@@ -53,6 +54,7 @@ func New(cfg *config.Config) (*Controller, error) {
 			c.byID[p.ID()] = p
 		}
 	}
+	c.done = make(chan struct{})
 	return &c, nil
 }
 
@@ -68,6 +70,10 @@ func (c *Controller) Names() []string {
 	return nil
 }
 
+func (c *Controller) Events() chan<- event { return c.events }
+
+func (c *Controller) Done() <-chan struct{} { return c.done }
+
 func (c *Controller) Close() error {
 	var errs []error
 	for path, s := range c.sinks {
@@ -80,6 +86,7 @@ func (c *Controller) Close() error {
 }
 
 func (c *Controller) Run(logger *slog.Logger) {
+	defer close(c.done)
 	c.logger = logger
 
 	sigCh := make(chan os.Signal, 1)

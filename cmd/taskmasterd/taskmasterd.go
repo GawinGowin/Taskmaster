@@ -87,7 +87,15 @@ func run() error {
 		slog.String("version", version),
 		slog.String("config", *cfgPath),
 	}...)
+
+	shell, err := controller.NewShell(c.Events(), c.Done(), c.Names)
+	if err != nil {
+		return fmt.Errorf("shell: %w", err)
+	}
+
+	go shell.Run()
 	c.Run(logger)
+	<-shell.Exited()
 
 	err = c.Close()
 	logger.LogAttrs(context.Background(), slog.LevelInfo, "exit", slog.Int("self", self))
