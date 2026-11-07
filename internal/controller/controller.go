@@ -225,8 +225,6 @@ func (c *Controller) Run(logger *slog.Logger) {
 			case CmdReload:
 			case CmdQuit:
 				c.beginShutdown()
-			case CmdHelp:
-
 			}
 		}
 	}

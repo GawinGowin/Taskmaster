@@ -1,12 +1,25 @@
 package controller
 
 import (
+	"fmt"
 	"io"
 	"strings"
-	"fmt"
 
 	"github.com/chzyer/readline"
 )
+
+const usageText = `commands:
+  start   <name>... | all   start programs
+  stop    <name>... | all   stop programs
+  restart <name>... | all   stop and start programs
+  status  [<name>...]       show program status (all if no name)
+  reload                    reread the config file and apply changes
+  quit                      stop all programs and exit taskmasterd
+  help                      show this message`
+
+func usage(w io.Writer) {
+	fmt.Fprintln(w, usageText)
+}
 
 type Shell struct {
 	rl     *readline.Instance
@@ -84,17 +97,22 @@ func (s *Shell) Run() error {
 		if len(argv) == 0 {
 			continue
 		}
+		if argv[0] == "help" {
+			usage(s.rl.Stderr())
+			continue
+		}
 		cmd, targets, err := parseLine(argv)
 		if err != nil {
 			fmt.Fprintln(s.rl.Stderr(), err)
+			usage(s.rl.Stderr())
 			continue
 		}
 
-		var reply chan []string
-		reply = make(chan []string, 1)
-
+		reply := make(chan []string, 1)
 		s.events <- evRequest{
-			cmd, targets, reply,
+			cmd:     cmd,
+			targets: targets,
+			reply:   reply,
 		}
 		// TODO: reply を受信して表示してから次の Readline() に進む。
 		// コントローラが返事を送らずに終わると戻れなくなるので、s.done と select で待つ。
@@ -102,14 +120,13 @@ func (s *Shell) Run() error {
 }
 
 func parseLine(argv []string) (Command, []string, error) {
-	c := argv[0]
+	cmd, ok := availableCommand[argv[0]]
+	if !ok {
+		return 0, nil, fmt.Errorf("%s: unknown command", argv[0])
+	}
 	var targets []string
 	if len(argv) > 1 {
 		targets = argv[1:]
-	}
-	cmd, ok := availableCommand[c]
-	if !ok {
-		return CmdHelp, nil, fmt.Errorf("%s: unknown command", c)
 	}
 	return cmd, targets, nil
 }

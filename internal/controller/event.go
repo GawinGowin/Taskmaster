@@ -44,7 +44,6 @@ const (
 	CmdStatus
 	CmdReload
 	CmdQuit
-	CmdHelp
 )
 
 var availableCommand = map[string]Command{
@@ -54,7 +53,6 @@ var availableCommand = map[string]Command{
 	"status":  CmdStatus,
 	"reload":  CmdReload,
 	"quit":    CmdQuit,
-	"help":    CmdHelp,
 }
 
 func (evExited) isEvent()           {}
