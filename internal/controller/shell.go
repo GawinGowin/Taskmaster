@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/chzyer/readline"
 )
@@ -16,6 +17,8 @@ const usageText = `commands:
   reload                    reread the config file and apply changes
   quit                      stop all programs and exit taskmasterd
   help                      show this message`
+
+const replyTimeout = 5 * time.Second
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, usageText)
@@ -84,12 +87,19 @@ func (s *Shell) Run() error {
 		case err == readline.ErrInterrupt: // Ctrl-C
 			continue
 		case err == io.EOF: // Ctrl-D
-			s.events <- evRequest{
-				cmd:     CmdQuit,
-				targets: nil,
-				reply:   nil,
+			select {
+			// s.done で rl.Close() されたときも Readline() は io.EOF を返すので、Ctrl-D と区別できない。
+			// 先に s.done が閉じているかを確認し、閉じていれば CmdQuit を送らずに戻る。
+			case <-s.done:
+				return nil
+			default:
+				s.events <- evRequest{
+					cmd:     CmdQuit,
+					targets: nil,
+					reply:   nil,
+				}
 			}
-			return nil // todo
+			return nil
 		case err != nil:
 			return err
 		}
@@ -114,8 +124,14 @@ func (s *Shell) Run() error {
 			targets: targets,
 			reply:   reply,
 		}
-		// TODO: reply を受信して表示してから次の Readline() に進む。
-		// コントローラが返事を送らずに終わると戻れなくなるので、s.done と select で待つ。
+		select {
+		case r := <-reply:
+			fmt.Fprintln(s.rl.Stdout(), strings.Join(r, "\n"))
+		case <-s.done:
+			return nil
+		case <-time.After(replyTimeout):
+			fmt.Fprintln(s.rl.Stderr(), "reply timeout")
+		}
 	}
 }
 
