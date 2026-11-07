@@ -8,6 +8,7 @@
       "mode": "auto",
       "program": "${workspaceFolder}/cmd/taskmasterd/taskmasterd.go",
       "args": ["-c", "${workspaceFolder}/configs/taskmasterd.yaml"],
+      "console": "integratedTerminal",
       "preLaunchTask": "go_build"
     },
     {
