@@ -3,15 +3,17 @@ package controller
 import (
 	"os"
 	"syscall"
+	"time"
 )
 
 type event interface{ isEvent() }
 
 type evExited struct {
-	id  string
-	gen uint64
-	ps  *os.ProcessState
-	err error // wait 自体が失敗したとき
+	id   string
+	gen  uint64
+	ps   *os.ProcessState
+	err  error // wait 自体が失敗したとき
+	when time.Time
 }
 type evStartTimeElapsed struct {
 	id  string

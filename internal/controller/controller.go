@@ -130,13 +130,15 @@ func (c *Controller) Run(logger *slog.Logger) {
 			if p.Gen() != ev.gen {
 				continue
 			}
+			p.SetStoppedtime(ev.when)
 			var ok bool
-			how := death(ev.ps, ev.err)
+			how, msg := death(ev.ps, ev.err)
 			if ev.err == nil {
 				ok = isExpected(ev.ps, p.Spec().Exitcodes)
 			}
 			switch p.State() {
 			case process.Starting:
+				p.SetSpawnErr(msg)
 				c.startFailed(p, how)
 
 			case process.Stopping:
@@ -218,11 +220,46 @@ func (c *Controller) Run(logger *slog.Logger) {
 			c.sendSignal(p, syscall.SIGKILL)
 
 		case evRequest:
+			for _, t := range ev.targets {
+				if err := checkTarget(t); err != nil {
+					ev.reply <- []string{err.Error()}
+					close(ev.reply)
+					continue
+				}
+			}
+			if slices.Contains(ev.targets, "all") {
+				ev.targets = slices.Sorted(maps.Keys(c.byID))
+			}
+
 			switch ev.cmd {
-			case CmdStop:
-			case CmdRestart:
-			case CmdStatus:
+			case CmdStart: // 引数あり
+			case CmdStop: // 引数あり
+			case CmdRestart: // 引数あり
+			case CmdStatus: // 引数あり
+				ret := []string{}
+				sts := []process.Status{}
+				for _, t := range ev.targets {
+					p, ok := c.byID[t]
+					if !ok {
+						ret = append(ret, t+": not found")
+						continue
+					}
+					st := process.Status{
+						ID:       p.ID(),
+						State:    p.State(),
+						Gen:      p.Gen(),
+						Pid:      p.Pid(),
+						Started:  p.Started(),
+						Stopped:  p.Stopped(),
+						SpawnErr: p.SpawnErr(),
+					}
+					sts = append(sts, st)
+				}
+				ret = append(ret, process.Table(sts, time.Now())...)
+				ev.reply <- ret
+				close(ev.reply)
 			case CmdReload:
+
 			case CmdQuit:
 				c.beginShutdown()
 			}
@@ -250,8 +287,10 @@ func (c *Controller) start(p *process.Process) {
 	gen := p.NextGen()
 	id := p.ID()
 	c.to(slog.LevelInfo, p, process.Starting)
+	p.SetSpawnErr("")
 	wait, err := p.Start()
 	if err != nil {
+		p.SetSpawnErr(err.Error())
 		c.startFailed(p, slog.String("err", err.Error()))
 		return
 	}
@@ -264,12 +303,13 @@ func (c *Controller) start(p *process.Process) {
 
 	go func() {
 		ps, err := wait()
+		stoptime := time.Now()
 		// 終了コードが 0 以外・シグナル死も *exec.ExitError で返る。
 		// err には wait 自体の失敗だけを残す。
 		if _, ok := errors.AsType[*exec.ExitError](err); ok {
 			err = nil
 		}
-		c.events <- evExited{id: id, gen: gen, ps: ps, err: err}
+		c.events <- evExited{id: id, gen: gen, ps: ps, err: err, when: stoptime}
 	}()
 
 	time.AfterFunc(time.Duration(p.Spec().Starttime)*time.Second, func() {
@@ -428,15 +468,21 @@ func (c *Controller) sinkFor(path string) (*process.Sink, error) {
 	return s, nil
 }
 
-func death(ps *os.ProcessState, err error) slog.Attr {
+func death(ps *os.ProcessState, err error) (slog.Attr, string) {
 	if err != nil {
-		return slog.String("err", err.Error())
+		msg := err.Error()
+		return slog.String("err", msg), msg
 	}
 	ws := ps.Sys().(syscall.WaitStatus)
 	if ws.Signaled() {
-		return slog.Int("signal", int(ws.Signal()))
+		msg := fmt.Sprintf("terminated by signal %d", int(ws.Signal()))
+		if ws.CoreDump() {
+			msg += " (core dumped)"
+		}
+		return slog.Int("signal", int(ws.Signal())), msg
 	}
-	return slog.Int("exitcode", ps.ExitCode())
+	msg := fmt.Sprintf("exit status %d", ps.ExitCode())
+	return slog.Int("exitcode", ps.ExitCode()), msg
 }
 
 // シグナル死は常に想定外。

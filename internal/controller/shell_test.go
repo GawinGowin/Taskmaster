@@ -272,3 +272,28 @@ func TestShell_WaitsReplyBeforeNextLine(t *testing.T) {
 		t.Errorf("応答のあとの cmd = %v, want CmdStatus(%v)", req.cmd, CmdStatus)
 	}
 }
+
+func TestCheckTarget(t *testing.T) {
+	tests := []struct {
+		target string
+		ok     bool
+	}{
+		{"all", true},
+		{"app", true},
+		{"app:0", true},
+		{"app:12", true},
+		{"all:0", false},
+		{":0", false},
+		{"app:", false},
+		{"app:-1", false},
+		{"app:+1", false},
+		{"app:x", false},
+		{"app:0:1", false},
+	}
+	for _, tt := range tests {
+		err := checkTarget(tt.target)
+		if (err == nil) != tt.ok {
+			t.Errorf("checkTarget(%q) = %v, want ok=%v", tt.target, err, tt.ok)
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+	"time"
 
 	"taskmaster/internal/config"
 )
@@ -17,15 +18,18 @@ const SpawnMarker = "__spawn"
 var spawnHelper = "/proc/self/exe"
 
 type Process struct {
-	prog    config.Program
-	proc    *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
-	index   int
-	name    string
-	stdout  *Sink // nil なら破棄
-	stderr  *Sink // nil なら破棄
-	state   State
-	gen     uint64
-	retries int
+	prog     config.Program
+	proc     *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
+	index    int
+	name     string
+	stdout   *Sink // nil なら破棄
+	stderr   *Sink // nil なら破棄
+	state    State
+	gen      uint64
+	retries  int
+	started  time.Time // (p *Process) Start() で設定
+	stopped  time.Time // (p *Process) SetStoppedtime() で設定
+	spawnErr string    // (p *Process) SetSpawnErr() で設定
 }
 
 func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) (*Process, error) {
@@ -116,6 +120,7 @@ func (p *Process) Start() (wait func() (*os.ProcessState, error), err error) {
 
 		cmd.Stderr = w2
 	}
+	p.started = time.Now()
 	err = cmd.Start()
 	w1.Close()
 	w2.Close()
@@ -184,6 +189,26 @@ func (p *Process) ResetRetries() int {
 
 func (p *Process) Spec() config.Program {
 	return p.prog
+}
+
+func (p *Process) Started() time.Time {
+	return p.started
+}
+
+func (p *Process) Stopped() time.Time {
+	return p.stopped
+}
+
+func (p *Process) SpawnErr() string {
+	return p.spawnErr
+}
+
+func (p *Process) SetStoppedtime(t time.Time) {
+	p.stopped = t
+}
+
+func (p *Process) SetSpawnErr(e string) {
+	p.spawnErr = e
 }
 
 func envSlice(m map[string]string) []string {

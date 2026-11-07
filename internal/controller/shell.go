@@ -144,5 +144,34 @@ func parseLine(argv []string) (Command, []string, error) {
 	if len(argv) > 1 {
 		targets = argv[1:]
 	}
+	for _, t := range targets {
+		if err := checkTarget(t); err != nil {
+			return 0, nil, err
+		}
+	}
 	return cmd, targets, nil
+}
+
+// target が all / <name> / <name>:<index> のどれかの形かを見る。
+func checkTarget(t string) error {
+	name, index, hasIndex := strings.Cut(t, ":")
+	if name == "" {
+		return fmt.Errorf("%q: missing program name", t)
+	}
+	if !hasIndex {
+		return nil
+	}
+	if name == "all" {
+		return fmt.Errorf("%q: all does not take an index", t)
+	}
+	if index == "" {
+		return fmt.Errorf("%q: missing index after ':'", t)
+	}
+	// strconv.Atoi は "+1" や "-1" も受け付けるので、数字だけかを 1 文字ずつ見る。
+	for _, b := range []byte(index) {
+		if b < '0' || b > '9' {
+			return fmt.Errorf("%q: index must be a non-negative integer", t)
+		}
+	}
+	return nil
 }
