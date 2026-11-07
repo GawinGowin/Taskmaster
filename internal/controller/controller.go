@@ -219,10 +219,15 @@ func (c *Controller) Run(logger *slog.Logger) {
 
 		case evRequest:
 			switch ev.cmd {
+			case CmdStop:
+			case CmdRestart:
+			case CmdStatus:
+			case CmdReload:
 			case CmdQuit:
 				c.beginShutdown()
-			}
+			case CmdHelp:
 
+			}
 		}
 	}
 }

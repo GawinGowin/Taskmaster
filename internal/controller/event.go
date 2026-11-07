@@ -47,6 +47,16 @@ const (
 	CmdHelp
 )
 
+var availableCommand = map[string]Command{
+	"start":   CmdStart,
+	"stop":    CmdStop,
+	"restart": CmdRestart,
+	"status":  CmdStatus,
+	"reload":  CmdReload,
+	"quit":    CmdQuit,
+	"help":    CmdHelp,
+}
+
 func (evExited) isEvent()           {}
 func (evStartTimeElapsed) isEvent() {}
 func (evStopTimeout) isEvent()      {}

@@ -3,6 +3,7 @@ package controller
 import (
 	"io"
 	"strings"
+	"fmt"
 
 	"github.com/chzyer/readline"
 )
@@ -80,9 +81,12 @@ func (s *Shell) Run() error {
 			return err
 		}
 		argv := strings.Fields(line)
-		cmd, target, err := parseLine(argv)
+		if len(argv) == 0 {
+			continue
+		}
+		cmd, targets, err := parseLine(argv)
 		if err != nil {
-			// syntax err
+			fmt.Fprintln(s.rl.Stderr(), err)
 			continue
 		}
 
@@ -90,12 +94,22 @@ func (s *Shell) Run() error {
 		reply = make(chan []string, 1)
 
 		s.events <- evRequest{
-			cmd, target, reply,
+			cmd, targets, reply,
 		}
+		// TODO: reply を受信して表示してから次の Readline() に進む。
+		// コントローラが返事を送らずに終わると戻れなくなるので、s.done と select で待つ。
 	}
 }
 
 func parseLine(argv []string) (Command, []string, error) {
-	tmpTarget := argv[1:]
-	return CmdHelp, tmpTarget, nil
+	c := argv[0]
+	var targets []string
+	if len(argv) > 1 {
+		targets = argv[1:]
+	}
+	cmd, ok := availableCommand[c]
+	if !ok {
+		return CmdHelp, nil, fmt.Errorf("%s: unknown command", c)
+	}
+	return cmd, targets, nil
 }
