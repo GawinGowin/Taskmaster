@@ -290,8 +290,10 @@ func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 		)
 		return
 	}
+	id := p.ID()
+	gen := p.Gen()
 	time.AfterFunc(delay, func() {
-		c.events <- evBackoffElapsed{id: p.ID(), gen: p.Gen()}
+		c.events <- evBackoffElapsed{id: id, gen: gen}
 	})
 }
 

@@ -72,32 +72,39 @@ func (c *Controller) resolve(targets []string) (procs []*process.Process, errs [
 		procs = append(procs, p)
 	}
 	for _, t := range targets {
-		if t == "all" {
-			for _, k := range c.order {
-				for _, p := range c.groups[k].procs {
-					add(p)
-				}
-			}
-			continue
+		ps, _, errLine := c.resolveOne(t)
+		for _, p := range ps {
+			add(p)
 		}
-		name, index, hasIndex := strings.Cut(t, ":")
-		g, ok := c.groups[name]
-		if !ok {
-			errs = append(errs, fmt.Sprintf("%s: ERROR (no such program)", t))
-			continue
+		if errLine != "" {
+			errs = append(errs, errLine)
 		}
-		if !hasIndex {
-			for _, p := range g.procs {
-				add(p)
-			}
-			continue
-		}
-		i, err := strconv.Atoi(index) // checkTarget が数字だけを通し、失敗するのはoverflowの時のみ
-		if err != nil || i >= len(g.procs) {
-			errs = append(errs, fmt.Sprintf("%s: ERROR (no such process, numprocs is %d)", t, len(g.procs)))
-			continue
-		}
-		add(g.procs[i])
 	}
 	return procs, errs
+}
+
+func (c *Controller) resolveOne(t string) (procs []*process.Process, individual bool, errLine string) {
+	if t == "all" {
+		for _, k := range c.order {
+			for _, p := range c.groups[k].procs {
+				procs = append(procs, p)
+			}
+		}
+		return procs, false, ""
+	}
+	name, index, hasIndex := strings.Cut(t, ":")
+	g, ok := c.groups[name]
+	if !ok {
+		return procs, hasIndex, fmt.Sprintf("%s: ERROR (no such program)", t)
+	}
+	if !hasIndex {
+		procs = append(procs, g.procs...)
+		return procs, hasIndex, ""
+	}
+	i, err := strconv.Atoi(index) // checkTarget が数字だけを通し、失敗するのはoverflowの時のみ
+	if err != nil || i >= len(g.procs) {
+		return procs, hasIndex, fmt.Sprintf("%s: ERROR (no such process, numprocs is %d)", t, len(g.procs))
+	}
+	procs = append(procs, g.procs[i])
+	return procs, hasIndex, ""
 }

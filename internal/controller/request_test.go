@@ -192,3 +192,102 @@ func TestRequest_Quit(t *testing.T) {
 		t.Fatalf("quit の応答から %v 待っても done が閉じない", wait)
 	}
 }
+
+// TestResolve は、対象の引数をプロセスとエラーの行に展開する規則を見る。
+// New だけを呼び、Run は動かさない。resolve はループの外から呼んでも、状態を読み書きしない。
+//
+// program は名前の昇順と numprocs の 2 桁を見るために 3 つ置く。
+// w の numprocs を 12 にするのは、文字列の昇順だと w:10 が w:2 より前に来るから。
+func TestResolve(t *testing.T) {
+	c, err := New(&config.Config{Programs: map[string]config.Program{
+		"w":       idle(12),
+		"healthy": idle(2),
+		"a":       idle(1),
+	}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	allIDs := []string{"a:0", "healthy:0", "healthy:1"}
+	for i := range 12 {
+		allIDs = append(allIDs, fmt.Sprintf("w:%d", i))
+	}
+
+	for _, tc := range []struct {
+		name     string
+		targets  []string
+		wantIDs  []string
+		wantErrs []string
+	}{
+		{
+			name:    "all は program 名の昇順、その中は index の数の昇順",
+			targets: []string{"all"},
+			wantIDs: allIDs,
+		},
+		{
+			name:    "name はその program の全プロセス",
+			targets: []string{"healthy"},
+			wantIDs: []string{"healthy:0", "healthy:1"},
+		},
+		{
+			name:    "重複は 2 回目以降を捨て、最初に出てきた位置に並ぶ",
+			targets: []string{"healthy:1", "healthy"},
+			wantIDs: []string{"healthy:1", "healthy:0"},
+		},
+		{
+			name:    "重複は ID で見るので、先頭に 0 を付けた index も同じプロセス",
+			targets: []string{"healthy:1", "healthy:01"},
+			wantIDs: []string{"healthy:1"},
+		},
+		{
+			name:    "all の前に書いたプロセスは先頭に来て、all の中では捨てる",
+			targets: []string{"w:11", "all"},
+			wantIDs: append([]string{"w:11"}, slices.DeleteFunc(slices.Clone(allIDs), func(id string) bool { return id == "w:11" })...),
+		},
+		{
+			name:     "エラーの行は重複を捨てない",
+			targets:  []string{"nosuch", "nosuch"},
+			wantErrs: []string{"nosuch: ERROR (no such program)", "nosuch: ERROR (no such program)"},
+		},
+		{
+			name:     "index が numprocs 以上なら範囲外",
+			targets:  []string{"healthy:2"},
+			wantErrs: []string{"healthy:2: ERROR (no such process, numprocs is 2)"},
+		},
+		{
+			name:     "index が int を桁あふれしても範囲外",
+			targets:  []string{"healthy:99999999999999999999"},
+			wantErrs: []string{"healthy:99999999999999999999: ERROR (no such process, numprocs is 2)"},
+		},
+		{
+			name:     "エラーの引数があっても、ほかの引数は展開する",
+			targets:  []string{"nosuch", "a", "a:1"},
+			wantIDs:  []string{"a:0"},
+			wantErrs: []string{"nosuch: ERROR (no such program)", "a:1: ERROR (no such process, numprocs is 1)"},
+		},
+		{
+			name:    "引数なしは何も返さない",
+			targets: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, tg := range tc.targets {
+				if err := checkTarget(tg); err != nil {
+					t.Fatalf("テストの入力 %q が checkTarget を通らない: %v", tg, err)
+				}
+			}
+			procs, errs := c.resolve(tc.targets)
+			var ids []string
+			for _, p := range procs {
+				ids = append(ids, p.ID())
+			}
+			if !slices.Equal(ids, tc.wantIDs) {
+				t.Errorf("resolve(%q) のプロセス = %q, want %q", tc.targets, ids, tc.wantIDs)
+			}
+			if !slices.Equal(errs, tc.wantErrs) {
+				t.Errorf("resolve(%q) のエラー = %q, want %q", tc.targets, errs, tc.wantErrs)
+			}
+		})
+	}
+}
