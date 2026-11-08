@@ -93,10 +93,13 @@ func (s *Shell) Run() error {
 			case <-s.done:
 				return nil
 			default:
-				s.events <- evRequest{
+				select {
+				case s.events <- evRequest{
 					cmd:     CmdQuit,
 					targets: nil,
 					reply:   nil,
+				}:
+				case <-s.done:
 				}
 			}
 			return nil
@@ -119,11 +122,15 @@ func (s *Shell) Run() error {
 		}
 
 		reply := make(chan []string, 1)
-		s.events <- evRequest{
+		select {
+		case s.events <- evRequest{
 			cmd:     cmd,
 			targets: targets,
 			reply:   reply,
+		}:
+		case <-s.done:
 		}
+
 		select {
 		case r := <-reply:
 			fmt.Fprintln(s.rl.Stdout(), strings.Join(r, "\n"))
