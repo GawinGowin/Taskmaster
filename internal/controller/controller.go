@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -219,23 +221,19 @@ func (c *Controller) Run(logger *slog.Logger) {
 				close(ev.reply)
 				continue
 			}
-			if slices.Contains(ev.targets, "all") {
-				ev.targets = slices.Sorted(maps.Keys(c.byID))
-			}
-
 			switch ev.cmd {
 			case CmdStart: // 引数あり
 			case CmdStop: // 引数あり
 			case CmdRestart: // 引数あり
 			case CmdStatus: // 引数あり
+				if len(ev.targets) == 0 {
+					ev.targets = append(ev.targets, "all")
+				}
+				ps, errs := c.resolve(ev.targets)
 				ret := []string{}
+				ret = append(ret, errs...)
 				sts := []process.Status{}
-				for _, t := range ev.targets {
-					p, ok := c.byID[t]
-					if !ok {
-						ret = append(ret, t+": not found")
-						continue
-					}
+				for _, p := range ps {
 					st := process.Status{
 						ID:       p.ID(),
 						State:    p.State(),
@@ -247,7 +245,9 @@ func (c *Controller) Run(logger *slog.Logger) {
 					}
 					sts = append(sts, st)
 				}
-				ret = append(ret, process.Table(sts, time.Now())...)
+				if len(sts) > 0 {
+					ret = append(ret, process.Table(sts, time.Now())...)
+				}
 				ev.reply <- ret
 				close(ev.reply)
 			case CmdReload:
@@ -475,6 +475,46 @@ func (c *Controller) sinkFor(path string) (*process.Sink, error) {
 	}
 	c.sinks[abs] = s
 	return s, nil
+}
+
+func (c *Controller) resolve(targets []string) (procs []*process.Process, errs []string) {
+	seen := map[string]bool{}
+	add := func(p *process.Process) {
+		if seen[p.ID()] {
+			return
+		}
+		seen[p.ID()] = true
+		procs = append(procs, p)
+	}
+	for _, t := range targets {
+		if t == "all" {
+			for _, k := range c.order {
+				for _, p := range c.groups[k].procs {
+					add(p)
+				}
+			}
+			continue
+		}
+		name, index, hasIndex := strings.Cut(t, ":")
+		g, ok := c.groups[name]
+		if !ok {
+			errs = append(errs, fmt.Sprintf("%s: ERROR (no such program)", t))
+			continue
+		}
+		if !hasIndex {
+			for _, p := range g.procs {
+				add(p)
+			}
+			continue
+		}
+		i, err := strconv.Atoi(index) // checkTarget が数字だけを通し、失敗するのはoverflowの時のみ
+		if err != nil || i >= len(g.procs) {
+			errs = append(errs, fmt.Sprintf("%s: ERROR (no such process, numprocs is %d)", t, len(g.procs)))
+			continue
+		}
+		add(g.procs[i])
+	}
+	return procs, errs
 }
 
 func death(ps *os.ProcessState, err error) (slog.Attr, string) {
