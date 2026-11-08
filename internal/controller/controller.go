@@ -181,19 +181,7 @@ func (c *Controller) Run(logger *slog.Logger) {
 			signal := slog.Int("signal", int(ev.sig))
 			switch ev.sig {
 			case syscall.SIGINT, syscall.SIGTERM:
-				if c.shutdown {
-					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
-						signal,
-						slog.String("action", "ignore"),
-						slog.String("reason", "already_shutting_down"),
-					)
-				} else {
-					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
-						signal,
-						slog.String("action", "shutdown"),
-					)
-					c.beginShutdown()
-				}
+				c.beginShutdown("signal", signal)
 			case syscall.SIGHUP:
 				c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
 					signal,
@@ -261,7 +249,11 @@ func (c *Controller) Run(logger *slog.Logger) {
 			case CmdReload:
 
 			case CmdQuit:
-				c.beginShutdown()
+				c.beginShutdown("cmd", slog.String("cmd", "quit"))
+				if ev.reply != nil {
+					ev.reply <- []string{"shutting down"}
+					close(ev.reply)
+				}
 			}
 		}
 	}
@@ -372,8 +364,21 @@ func (c *Controller) stop(p *process.Process, how string) {
 	}
 }
 
-func (c *Controller) beginShutdown() {
+func (c *Controller) beginShutdown(msg string, attrs ...slog.Attr) {
+	if c.shutdown {
+		c.logger.LogAttrs(context.Background(), slog.LevelInfo, msg,
+			slices.Concat(attrs, []slog.Attr{
+				slog.String("action", "ignore"),
+				slog.String("reason", "already_shutting_down"),
+			})...,
+		)
+		return
+	}
 	c.shutdown = true
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, msg,
+		slices.Concat(attrs, []slog.Attr{
+			slog.String("action", "shutdown"),
+		})...)
 	for _, name := range c.order {
 		for _, p := range c.groups[name].procs {
 			c.stop(p, "shutdown")

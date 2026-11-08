@@ -139,6 +139,9 @@ func (s *Shell) Run() error {
 		case <-time.After(replyTimeout):
 			fmt.Fprintln(s.rl.Stderr(), "reply timeout")
 		}
+		if cmd == CmdQuit {
+			return nil
+		}
 	}
 }
 
