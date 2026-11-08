@@ -208,12 +208,16 @@ func (c *Controller) Run(logger *slog.Logger) {
 			c.sendSignal(p, syscall.SIGKILL)
 
 		case evRequest:
+			var err error
 			for _, t := range ev.targets {
-				if err := checkTarget(t); err != nil {
-					ev.reply <- []string{err.Error()}
-					close(ev.reply)
-					continue
+				if err = checkTarget(t); err != nil {
+					break
 				}
+			}
+			if err != nil {
+				ev.reply <- []string{err.Error()}
+				close(ev.reply)
+				continue
 			}
 			if slices.Contains(ev.targets, "all") {
 				ev.targets = slices.Sorted(maps.Keys(c.byID))
