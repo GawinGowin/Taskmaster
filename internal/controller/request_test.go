@@ -3,8 +3,10 @@ package controller
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -289,5 +291,174 @@ func TestResolve(t *testing.T) {
 				t.Errorf("resolve(%q) のエラー = %q, want %q", tc.targets, errs, tc.wantErrs)
 			}
 		})
+	}
+}
+
+// sleeper は、子を起動して STARTING に留まる program の設定を返す。
+// starttime を 10 秒にして、テストの間に RUNNING へ進まないようにする。
+// 後始末の quit で SIGTERM を送ると、sleep はすぐに終わる。
+func sleeper(numprocs int) config.Program {
+	return config.Program{
+		Cmd:        config.Command{"sleep", "30"},
+		Numprocs:   numprocs,
+		Starttime:  10,
+		Stopsignal: config.Stopsignal(syscall.SIGTERM),
+		Stoptime:   1,
+	}
+}
+
+// missing は、cmd が存在しないパスで、Process.Start() がその場でエラーを返す program の設定を返す。
+func missing(startretries int) config.Program {
+	return config.Program{Cmd: config.Command{"/nonexistent"}, Numprocs: 1, Startretries: startretries}
+}
+
+var pidRe = regexp.MustCompile(`pid \d+`)
+
+// maskPid は、応答の行の pid を N に置き換える。pid は実行ごとに変わるので、行を丸ごと比べるために使う。
+func maskPid(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = pidRe.ReplaceAllString(l, "pid N")
+	}
+	return out
+}
+
+// TestRequest_Start は、start の応答の行を見る。
+// 引数は左から 1 つずつ処理し、前の引数で扱った ID は捨てる。
+// 何もしなかったプロセスに行を出すのは個体指定だけで、まとめ指定は行を出さない。
+// まとめ指定で 1 プロセスも対象にならなかったときだけ nothing to start を出す。
+//
+// ケースごとにループを作り直し、setup の start を順に送ってから targets を送る。
+// healthy は STARTING に留まるので、2 回目の start では何もしない。
+func TestRequest_Start(t *testing.T) {
+	const spawnErr = "fork/exec /nonexistent: no such file or directory"
+
+	for _, tc := range []struct {
+		name    string
+		setup   [][]string
+		targets []string
+		want    []string
+	}{
+		{
+			name:    "STOPPED のプロセスを起動する",
+			targets: []string{"healthy"},
+			want: []string{
+				"healthy:0: starting (pid N, gen 1)",
+				"healthy:1: starting (pid N, gen 1)",
+			},
+		},
+		{
+			name:    "個体指定で何もしなかったら already を出す",
+			setup:   [][]string{{"healthy:0"}},
+			targets: []string{"healthy:0", "healthy"},
+			want: []string{
+				"healthy:0: ERROR (already STARTING)",
+				"healthy:1: starting (pid N, gen 1)",
+			},
+		},
+		{
+			name:    "前の引数で扱ったプロセスがあれば、まとめ指定は nothing to start を出さない",
+			setup:   [][]string{{"healthy"}},
+			targets: []string{"healthy:0", "healthy"},
+			want:    []string{"healthy:0: ERROR (already STARTING)"},
+		},
+		{
+			name:    "まとめ指定が先なら、後ろの個体指定は捨てる",
+			setup:   [][]string{{"healthy:0"}},
+			targets: []string{"healthy", "healthy:0"},
+			want:    []string{"healthy:1: starting (pid N, gen 1)"},
+		},
+		{
+			name:    "まとめ指定で 1 プロセスも対象にならなければ nothing to start",
+			setup:   [][]string{{"healthy"}},
+			targets: []string{"healthy"},
+			want:    []string{"healthy: nothing to start"},
+		},
+		{
+			name:    "起動がその場で失敗したら spawn failed と BACKOFF を出し、ERROR を付けない",
+			targets: []string{"nocmd"},
+			want:    []string{"nocmd:0: spawn failed (" + spawnErr + "), now BACKOFF"},
+		},
+		{
+			name:    "startretries が 0 なら spawn failed のあと FATAL",
+			targets: []string{"nocmd0"},
+			want:    []string{"nocmd0:0: spawn failed (" + spawnErr + "), now FATAL"},
+		},
+		{
+			name:    "BACKOFF のプロセスは起動しない",
+			setup:   [][]string{{"nocmd"}},
+			targets: []string{"nocmd:0", "nocmd"},
+			want:    []string{"nocmd:0: ERROR (already BACKOFF)"},
+		},
+		{
+			name:    "FATAL のプロセスは起動し直す",
+			setup:   [][]string{{"nocmd0"}},
+			targets: []string{"nocmd0"},
+			want:    []string{"nocmd0:0: spawn failed (" + spawnErr + "), now FATAL"},
+		},
+		{
+			name:    "エラーの引数には nothing to start を出さない",
+			targets: []string{"nosuch", "healthy:5"},
+			want: []string{
+				"nosuch: ERROR (no such program)",
+				"healthy:5: ERROR (no such process, numprocs is 2)",
+			},
+		},
+		{
+			name:    "エラーの引数があっても、ほかの引数は起動する",
+			targets: []string{"nosuch", "healthy:1"},
+			want: []string{
+				"nosuch: ERROR (no such program)",
+				"healthy:1: starting (pid N, gen 1)",
+			},
+		},
+		{
+			name:    "対象が無ければ requires a target",
+			targets: nil,
+			want:    []string{"start: requires a target"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newLoop(t, map[string]config.Program{
+				"healthy": sleeper(2),
+				"nocmd":   missing(3),
+				"nocmd0":  missing(0),
+			})
+			for _, s := range tc.setup {
+				request(t, c, CmdStart, s...)
+			}
+			got := maskPid(request(t, c, CmdStart, tc.targets...))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("start %q = %q, want %q", tc.targets, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRequest_StartWhileShuttingDown は、shutdown が始まったあとの start に、引数ごとに shutting down を返すことを見る。
+//
+// shutdown の間に要求を受け付けさせるため、停止シグナルを SIGWINCH にして STOPPING に留める。
+// sleep は SIGWINCH を無視するので、stoptime の 1 秒後に SIGKILL で終わり、そこで Run が返る。
+func TestRequest_StartWhileShuttingDown(t *testing.T) {
+	p := sleeper(1)
+	p.Stopsignal = config.Stopsignal(syscall.SIGWINCH)
+	c := newLoop(t, map[string]config.Program{"slow": p})
+
+	request(t, c, CmdStart, "slow")
+	request(t, c, CmdQuit)
+	got := request(t, c, CmdStart, "slow", "nosuch")
+	want := []string{
+		"slow: ERROR (shutting down)",
+		"nosuch: ERROR (shutting down)",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("shutdown 中の start slow nosuch = %q, want %q", got, want)
+	}
+
+	// 後始末の newLoop は Run が返るのを wait（1 秒）しか待たないので、SIGKILL の分をここで待つ。
+	select {
+	case <-c.done:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("quit から 3 秒待っても Run が返らない")
 	}
 }
