@@ -233,10 +233,10 @@ func (c *Controller) to(lvl slog.Level, p *process.Process, next process.State, 
 	c.logger.LogAttrs(context.Background(), lvl, "transition", a...)
 }
 
-func (c *Controller) start(p *process.Process) {
+func (c *Controller) start(p *process.Process, attrs ...slog.Attr) {
 	gen := p.NextGen()
 	id := p.ID()
-	c.to(slog.LevelInfo, p, process.Starting)
+	c.to(slog.LevelInfo, p, process.Starting, attrs...)
 	p.SetSpawnErr("")
 	wait, err := p.Start()
 	if err != nil {

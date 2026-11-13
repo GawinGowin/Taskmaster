@@ -20,15 +20,57 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
+	targets := ev.targets
 	switch ev.cmd {
 	case CmdStart: // 引数あり
-		return []string{"not implemented"}
+		if len(targets) == 0 {
+			return []string{"start: requires a target"}
+		}
+		msg := []string{}
+		seen := map[string]*process.Process{}
+		for _, t := range targets {
+			if c.shutdown {
+				msg = append(msg, fmt.Sprintf("%s: ERROR (shutting down)", t))
+				continue
+			}
+			covered := false
+			ps, individual, errLine := c.resolveOne(t)
+			if errLine != "" {
+				msg = append(msg, errLine)
+				continue
+			}
+			for _, p := range ps {
+				if _, ok := seen[p.ID()]; ok {
+					covered = true
+					continue
+				}
+				seen[p.ID()] = p
+
+				isStartable := (p.State() == process.Stopped || p.State() == process.Exited || p.State() == process.Fatal)
+				if isStartable {
+					p.ResetRetries()
+					c.start(p, slog.String("by", "shell"))
+					if p.State() == process.Starting {
+						msg = append(msg, fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen()))
+					} else if p.State() == process.Backoff || p.State() == process.Fatal {
+						msg = append(msg, fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State()))
+					}
+					covered = true
+				} else if individual {
+					covered = true
+					msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
+				}
+			}
+			if !covered && !individual {
+				msg = append(msg, fmt.Sprintf("%s: nothing to start", t))
+			}
+		}
+		return msg
 	case CmdStop: // 引数あり
 		return []string{"not implemented"}
 	case CmdRestart: // 引数あり
 		return []string{"not implemented"}
 	case CmdStatus: // 引数あり
-		targets := ev.targets
 		if len(targets) == 0 {
 			targets = append(targets, "all")
 		}
@@ -84,6 +126,8 @@ func (c *Controller) resolve(targets []string) (procs []*process.Process, errs [
 }
 
 func (c *Controller) resolveOne(t string) (procs []*process.Process, individual bool, errLine string) {
+	// name もしくは all でまとめて指定したターゲット: individual == false
+	// name:index による個別指定したターゲット: individual == true
 	if t == "all" {
 		for _, k := range c.order {
 			for _, p := range c.groups[k].procs {
