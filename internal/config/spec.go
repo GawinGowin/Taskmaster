@@ -112,6 +112,15 @@ func (c *Stopsignal) UnmarshalYAML(n *yaml.Node) error {
 	}
 }
 
+func (s Stopsignal) String() string {
+	for name, sig := range availableSignal {
+		if syscall.Signal(s) == sig {
+			return "SIG" + name
+		}
+	}
+	return fmt.Sprintf("signal %d", int(s))
+}
+
 type EnvString string
 
 func (s *EnvString) UnmarshalYAML(n *yaml.Node) error {

@@ -67,7 +67,47 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 		}
 		return msg
 	case CmdStop: // 引数あり
-		return []string{"not implemented"}
+		if len(targets) == 0 {
+			return []string{"stop: requires a target"}
+		}
+		msg := []string{}
+		seen := map[string]*process.Process{}
+		for _, t := range targets {
+			covered := false
+			ps, individual, errLine := c.resolveOne(t)
+			if errLine != "" {
+				msg = append(msg, errLine)
+				continue
+			}
+			for _, p := range ps {
+				if _, ok := seen[p.ID()]; ok {
+					covered = true
+					continue
+				}
+				seen[p.ID()] = p
+
+				switch p.State() {
+				case process.Starting, process.Running:
+					covered = true
+					msg = append(msg, fmt.Sprintf("%s: stopping (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime)))
+					c.stop(p, slog.String("by", "shell"))
+				case process.Backoff:
+					covered = true
+					msg = append(msg, fmt.Sprintf("%s: stopped", p.ID()))
+					c.stop(p, slog.String("by", "shell"))
+				default:
+					if individual {
+						covered = true
+						msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
+					}
+				}
+			}
+			if !covered && !individual {
+				msg = append(msg, fmt.Sprintf("%s: nothing to stop", t))
+			}
+		}
+		return msg
+
 	case CmdRestart: // 引数あり
 		return []string{"not implemented"}
 	case CmdStatus: // 引数あり

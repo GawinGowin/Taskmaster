@@ -297,9 +297,7 @@ func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 	})
 }
 
-func (c *Controller) stop(p *process.Process, how string) {
-	by := slog.String("by", how)
-
+func (c *Controller) stop(p *process.Process, attrs ...slog.Attr) {
 	switch p.State() {
 	case process.Starting, process.Running:
 		gen := p.Gen()
@@ -311,8 +309,8 @@ func (c *Controller) stop(p *process.Process, how string) {
 		a := []slog.Attr{
 			slog.Int("stopsignal", int(stopsignal)),
 			slog.Int("stoptime", stoptime),
-			by,
 		}
+		a = append(a, attrs...)
 		c.to(slog.LevelInfo, p, process.Stopping, a...)
 		c.sendSignal(p, stopsignal)
 		time.AfterFunc(time.Duration(stoptime)*time.Second, func() {
@@ -320,7 +318,7 @@ func (c *Controller) stop(p *process.Process, how string) {
 		})
 
 	case process.Backoff:
-		c.to(slog.LevelInfo, p, process.Stopped, by)
+		c.to(slog.LevelInfo, p, process.Stopped, attrs...)
 	}
 }
 
@@ -341,7 +339,7 @@ func (c *Controller) beginShutdown(msg string, attrs ...slog.Attr) {
 		})...)
 	for _, name := range c.order {
 		for _, p := range c.groups[name].procs {
-			c.stop(p, "shutdown")
+			c.stop(p, slog.String("by", "shutdown"))
 		}
 	}
 }

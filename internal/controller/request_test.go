@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -11,20 +12,29 @@ import (
 	"time"
 
 	"taskmaster/internal/config"
+	"taskmaster/internal/process"
 )
 
-// newLoop は programs から Controller を作り、Run を別の goroutine で始める。
+// newLoop は programs から Controller を作り、Run を別の goroutine で始める。イベントログは捨てる。
 //
 // どの program も autostart: false、stdout / stderr を空にして渡すこと。
-// そうすると子プロセスも出力先のファイルも作られず、全プロセスが STOPPED のままになる。
-// 後始末で quit を送り、Run が返るのを待つ。テストが先に quit を送って Run が返っていれば、何もしない。
+// そうすると出力先のファイルは作られず、start を送るまで子プロセスも起動しない。
+// 後始末で quit を送り、Run が返るのを wait まで待つ。テストが先に quit を送って Run が返っていれば、何もしない。
+// 子を起動するテストは、quit から wait 以内に全プロセスが止まる stopsignal / stoptime にするか、
+// テストの中で quitAndWait を使って Run が返るのを待つこと。
 func newLoop(t *testing.T, programs map[string]config.Program) *Controller {
+	t.Helper()
+	return newLoopWithLogger(t, programs, slog.New(slog.DiscardHandler))
+}
+
+// newLoopWithLogger は、イベントログを logger に書く newLoop。
+func newLoopWithLogger(t *testing.T, programs map[string]config.Program, logger *slog.Logger) *Controller {
 	t.Helper()
 	c, err := New(&config.Config{Programs: programs})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	go c.Run(slog.New(slog.DiscardHandler))
+	go c.Run(logger)
 	t.Cleanup(func() {
 		select {
 		case c.events <- evRequest{cmd: CmdQuit}:
@@ -461,4 +471,343 @@ func TestRequest_StartWhileShuttingDown(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatalf("quit から 3 秒待っても Run が返らない")
 	}
+}
+
+// stubborn は、停止シグナルを受けても終わらず、STOPPING に留まる program の設定を返す。
+// sleep は SIGWINCH を無視するので、stoptime の 1 秒後に SIGKILL で終わる。
+func stubborn() config.Program {
+	p := sleeper(1)
+	p.Stopsignal = config.Stopsignal(syscall.SIGWINCH)
+	return p
+}
+
+// quitAndWait は quit を送り、Run が返るのを d まで待つ。
+// newLoop の後始末は wait（1 秒）しか待たないので、STOPPING のプロセスが SIGKILL で終わるのを待つときに使う。
+func quitAndWait(t *testing.T, c *Controller, d time.Duration) {
+	t.Helper()
+	request(t, c, CmdQuit)
+	select {
+	case <-c.done:
+	case <-time.After(d):
+		t.Fatalf("quit から %v 待っても Run が返らない", d)
+	}
+}
+
+// stateOf は、status で id の状態の欄を読む。
+// ループの外から Process を直接読むと単一ライターを破るので、status の応答を通す。
+func stateOf(t *testing.T, c *Controller, id string) string {
+	t.Helper()
+	got := request(t, c, CmdStatus, id)
+	if len(got) != 2 {
+		t.Fatalf("status %s = %q, want 見出しと 1 行", id, got)
+	}
+	return strings.Fields(got[1])[1]
+}
+
+// awaitState は、id の状態が want になるまで status を打ち直して待つ。
+func awaitState(t *testing.T, c *Controller, id string, want process.State) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got := stateOf(t, c, id)
+		if got == want.String() {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: 3 秒待っても %s にならない（今は %s）", id, want, got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+type step struct {
+	cmd     Command
+	targets []string
+}
+
+// TestRequest_Stop は、stop の応答の行を見る。
+// 引数の扱いは start と同じで、左から 1 つずつ処理し、前の引数で扱った ID は捨てる。
+// 何もしなかったプロセスに行を出すのは個体指定だけで、まとめ指定は行を出さない。
+// まとめ指定で 1 プロセスも対象にならなかったときだけ nothing to stop を出す。
+//
+// ケースごとにループを作り直し、setup を順に送ってから targets の stop を送る。
+// healthy は STARTING に留まり、SIGTERM ですぐ終わる。stubborn は STOPPING に留まる。
+func TestRequest_Stop(t *testing.T) {
+	usr1 := sleeper(1)
+	usr1.Stopsignal = config.Stopsignal(syscall.SIGUSR1)
+	usr1.Stoptime = 10
+
+	for _, tc := range []struct {
+		name    string
+		setup   []step
+		targets []string
+		want    []string
+	}{
+		{
+			name:    "STARTING のプロセスに停止シグナルを送る",
+			setup:   []step{{CmdStart, []string{"healthy"}}},
+			targets: []string{"healthy"},
+			want: []string{
+				"healthy:0: stopping (SIGTERM, SIGKILL in 1.0s)",
+				"healthy:1: stopping (SIGTERM, SIGKILL in 1.0s)",
+			},
+		},
+		{
+			name:    "停止シグナルと stoptime は設定の値を出す",
+			setup:   []step{{CmdStart, []string{"usr1"}}},
+			targets: []string{"usr1:0"},
+			want:    []string{"usr1:0: stopping (SIGUSR1, SIGKILL in 10.0s)"},
+		},
+		{
+			name:    "BACKOFF のプロセスは stopped を出し、まとめ指定でも nothing to stop を出さない",
+			setup:   []step{{CmdStart, []string{"nocmd"}}},
+			targets: []string{"nocmd"},
+			want:    []string{"nocmd:0: stopped"},
+		},
+		{
+			name:    "STOPPED のプロセスを個体指定したら already を出す",
+			targets: []string{"healthy:0"},
+			want:    []string{"healthy:0: ERROR (already STOPPED)"},
+		},
+		{
+			name:    "FATAL のプロセスを個体指定したら already を出す",
+			setup:   []step{{CmdStart, []string{"nocmd0"}}},
+			targets: []string{"nocmd0:0"},
+			want:    []string{"nocmd0:0: ERROR (already FATAL)"},
+		},
+		{
+			name: "STOPPING のプロセスを個体指定したら already を出す",
+			setup: []step{
+				{CmdStart, []string{"stubborn"}},
+				{CmdStop, []string{"stubborn"}},
+			},
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: ERROR (already STOPPING)"},
+		},
+		{
+			name: "STOPPING のプロセスはまとめ指定では行を出さない",
+			setup: []step{
+				{CmdStart, []string{"stubborn"}},
+				{CmdStop, []string{"stubborn"}},
+			},
+			targets: []string{"stubborn"},
+			want:    []string{"stubborn: nothing to stop"},
+		},
+		{
+			name:    "まとめ指定で 1 プロセスも対象にならなければ nothing to stop",
+			targets: []string{"healthy"},
+			want:    []string{"healthy: nothing to stop"},
+		},
+		{
+			name:    "まとめ指定で何もしなかったプロセスには行を出さない",
+			setup:   []step{{CmdStart, []string{"healthy:1"}}},
+			targets: []string{"healthy"},
+			want:    []string{"healthy:1: stopping (SIGTERM, SIGKILL in 1.0s)"},
+		},
+		{
+			name:    "前の引数で扱ったプロセスがあれば、まとめ指定は nothing to stop を出さない",
+			targets: []string{"healthy:0", "healthy"},
+			want:    []string{"healthy:0: ERROR (already STOPPED)"},
+		},
+		{
+			name:    "まとめ指定が先なら、後ろの個体指定は捨てる",
+			setup:   []step{{CmdStart, []string{"healthy:0"}}},
+			targets: []string{"healthy", "healthy:0"},
+			want:    []string{"healthy:0: stopping (SIGTERM, SIGKILL in 1.0s)"},
+		},
+		{
+			name:    "all は program 名の昇順に、止めたプロセスだけ行を出す",
+			setup:   []step{{CmdStart, []string{"nocmd", "healthy:1"}}},
+			targets: []string{"all"},
+			want: []string{
+				"healthy:1: stopping (SIGTERM, SIGKILL in 1.0s)",
+				"nocmd:0: stopped",
+			},
+		},
+		{
+			name:    "エラーの引数には nothing to stop を出さない",
+			targets: []string{"nosuch", "healthy:5"},
+			want: []string{
+				"nosuch: ERROR (no such program)",
+				"healthy:5: ERROR (no such process, numprocs is 2)",
+			},
+		},
+		{
+			name:    "エラーの引数があっても、ほかの引数は止める",
+			setup:   []step{{CmdStart, []string{"healthy:1"}}},
+			targets: []string{"nosuch", "healthy:1"},
+			want: []string{
+				"nosuch: ERROR (no such program)",
+				"healthy:1: stopping (SIGTERM, SIGKILL in 1.0s)",
+			},
+		},
+		{
+			name:    "対象が無ければ requires a target",
+			targets: nil,
+			want:    []string{"stop: requires a target"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newLoop(t, map[string]config.Program{
+				"healthy":  sleeper(2),
+				"usr1":     usr1,
+				"stubborn": stubborn(),
+				"nocmd":    missing(3),
+				"nocmd0":   missing(0),
+			})
+			for _, s := range tc.setup {
+				request(t, c, s.cmd, s.targets...)
+			}
+			got := request(t, c, CmdStop, tc.targets...)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("stop %q = %q, want %q", tc.targets, got, tc.want)
+			}
+			quitAndWait(t, c, 3*time.Second)
+		})
+	}
+}
+
+// TestRequest_StopRunning は、RUNNING のプロセスを stop すると、
+// 停止シグナルで終わったあと EXITED ではなく STOPPED に入り、autorestart: always でも起動し直さないことを見る。
+// シグナル死は想定外の終了なので、RUNNING のまま死んだ扱いになれば EXITED を経て STARTING に戻る。
+//
+// starttime を 0 にして、起動の直後に RUNNING へ進める。
+func TestRequest_StopRunning(t *testing.T) {
+	p := sleeper(1)
+	p.Starttime = 0
+	p.Autorestart = config.Always
+	c := newLoop(t, map[string]config.Program{"quick": p})
+
+	request(t, c, CmdStart, "quick")
+	awaitState(t, c, "quick:0", process.Running)
+
+	got := request(t, c, CmdStop, "quick")
+	want := []string{"quick:0: stopping (SIGTERM, SIGKILL in 1.0s)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("stop quick = %q, want %q", got, want)
+	}
+	awaitState(t, c, "quick:0", process.Stopped)
+}
+
+// TestRequest_StopBackoff は、BACKOFF のプロセスを stop すると、その場で STOPPED に入り、
+// 再試行の予約が後から届いても起動し直さないことを見る。
+// 1 回目の失敗の再試行は backoffUnit 後に届くので、その 2 倍待ってから状態を見る。
+func TestRequest_StopBackoff(t *testing.T) {
+	c := newLoop(t, map[string]config.Program{"nocmd": missing(3)})
+
+	request(t, c, CmdStart, "nocmd")
+	request(t, c, CmdStop, "nocmd")
+	if got := stateOf(t, c, "nocmd:0"); got != process.Stopped.String() {
+		t.Fatalf("stop の直後の状態 = %s, want STOPPED", got)
+	}
+	time.Sleep(2 * backoffUnit)
+	if got := stateOf(t, c, "nocmd:0"); got != process.Stopped.String() {
+		t.Errorf("再試行の予約が届いたあとの状態 = %s, want STOPPED のまま", got)
+	}
+}
+
+// TestRequest_StopLogsByShell は、シェルからの stop が、イベントログの遷移の行に by=shell を付けることを見る。
+// stop() の 2 つの分岐（STARTING → STOPPING と BACKOFF → STOPPED）を両方通す。
+// ログを書くのは Run の goroutine だけなので、Run が返ってから読む。
+func TestRequest_StopLogsByShell(t *testing.T) {
+	var buf bytes.Buffer
+	c := newLoopWithLogger(t, map[string]config.Program{
+		"healthy": sleeper(1),
+		"nocmd":   missing(3),
+	}, slog.New(slog.NewTextHandler(&buf, nil)))
+
+	request(t, c, CmdStart, "healthy", "nocmd")
+	request(t, c, CmdStop, "healthy", "nocmd")
+	quitAndWait(t, c, 3*time.Second)
+
+	lines := strings.Split(buf.String(), "\n")
+	for _, transition := range []string{
+		"id=healthy:0 from=STARTING to=STOPPING",
+		"id=nocmd:0 from=BACKOFF to=STOPPED",
+	} {
+		i := slices.IndexFunc(lines, func(l string) bool {
+			return strings.Contains(l, transition)
+		})
+		if i < 0 {
+			t.Errorf("イベントログに %q の行が無い\n%s", transition, buf.String())
+			continue
+		}
+		line := lines[i]
+		if !slices.Contains(strings.Fields(line), "by=shell") {
+			t.Errorf("%q の行に by=shell が無い: %s", transition, line)
+		}
+	}
+}
+
+// TestRequest_StopWhileStarting は、STARTING で stop したプロセスが、starttime が過ぎても RUNNING に進まず、
+// STOPPING に留まることを見る。starttime のタイマーは stop の前に設定されたもので、stop では取り消されない。
+//
+// 停止シグナルを SIGWINCH にして、stoptime（3 秒）の SIGKILL まで STOPPING に留める。
+// starttime（1 秒）の 0.5 秒後に状態を見る。
+func TestRequest_StopWhileStarting(t *testing.T) {
+	p := sleeper(1)
+	p.Starttime = 1
+	p.Stoptime = 3
+	p.Stopsignal = config.Stopsignal(syscall.SIGWINCH)
+	c := newLoop(t, map[string]config.Program{"slow": p})
+
+	request(t, c, CmdStart, "slow")
+	request(t, c, CmdStop, "slow")
+	time.Sleep(time.Duration(p.Starttime)*time.Second + 500*time.Millisecond)
+	if got := stateOf(t, c, "slow:0"); got != process.Stopping.String() {
+		t.Errorf("starttime が過ぎたあとの状態 = %s, want STOPPING のまま", got)
+	}
+	quitAndWait(t, c, 4*time.Second)
+}
+
+// TestRequest_StopBackoffThenStart は、BACKOFF で stop してから start し直したとき、
+// stop の前の世代の再試行タイマーを、新しい世代の再試行として扱わないことを見る。
+//
+// 1 回目の start の再試行タイマーは backoffUnit 後に発火する。その半分の時点で start し直すと、
+// 新しい世代の再試行は 2 回目の start から backoffUnit 後に届く。startretries が 1 なので、その再試行が失敗すると FATAL に入る。
+// タイマーは予定より早く発火しないので、正しければ FATAL に入るのは 2 回目の start から backoffUnit 以上あと。
+// 前の世代のタイマーを通してしまうと、その半分ほどで FATAL に入る。
+func TestRequest_StopBackoffThenStart(t *testing.T) {
+	c := newLoop(t, map[string]config.Program{"nocmd": missing(1)})
+
+	request(t, c, CmdStart, "nocmd")
+	request(t, c, CmdStop, "nocmd")
+	time.Sleep(backoffUnit / 2)
+	restarted := time.Now()
+	request(t, c, CmdStart, "nocmd")
+	awaitState(t, c, "nocmd:0", process.Fatal)
+	if d := time.Since(restarted); d < backoffUnit {
+		t.Errorf("2 回目の start から %v で FATAL に入った。再試行は %v 後に届くはず", d, backoffUnit)
+	}
+}
+
+// TestRequest_StopWhileShuttingDown は、shutdown が始まったあとの stop を、shutting down で弾かずに普通に処理することを見る。
+// shutdown がすべてのプロセスに停止シグナルを送るので、起動していたプロセスは STOPPING、起動していなかったプロセスは STOPPED になっている。
+//
+// 停止シグナルを SIGWINCH にして、stoptime（3 秒）の SIGKILL まで STOPPING に留める。
+func TestRequest_StopWhileShuttingDown(t *testing.T) {
+	p := stubborn()
+	p.Stoptime = 3
+	c := newLoop(t, map[string]config.Program{"slow": p, "never": idle(1)})
+
+	request(t, c, CmdStart, "slow")
+	request(t, c, CmdQuit)
+
+	got := request(t, c, CmdStop, "slow", "never:0", "nosuch")
+	want := []string{
+		"slow: nothing to stop",
+		"never:0: ERROR (already STOPPED)",
+		"nosuch: ERROR (no such program)",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("shutdown 中の stop slow never:0 nosuch = %q, want %q", got, want)
+	}
+
+	got = request(t, c, CmdStop, "slow:0")
+	want = []string{"slow:0: ERROR (already STOPPING)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("shutdown 中の stop slow:0 = %q, want %q", got, want)
+	}
+
+	quitAndWait(t, c, 4*time.Second)
 }

@@ -35,6 +35,9 @@ type testShell struct {
 // NewShell は readline の Config を中で決めていて、入出力を差し替えられない。
 // そこで、NewShell と同じフィールドの Shell をここで組み立てる。
 // FuncIsTerminal で端末ではないと答えると、readline は raw モードに入らず、Stdin から 1 行ずつ読む。
+// raw モードの出入りも何もしない関数に差し替える。readline v1.5.1 の RawMode は state を排他なしで読み書きするので、
+// 次の Readline() の EnterRawMode と、見張り goroutine の Close の ExitRawMode が -race で衝突する。
+// Stdin は端末ではないので、差し替えても失うものは無い。
 //
 // readline の Close は渡した Stdin を閉じないので、最初の Close はパイプの書き端が閉じるまで戻らない。
 // 見張り goroutine がその Close で止まったまま残るので、後始末で書き端を閉じる。
@@ -48,6 +51,8 @@ func newTestShell(t *testing.T) *testShell {
 		Stdout:         io.Discard,
 		Stderr:         io.Discard,
 		FuncIsTerminal: func() bool { return false },
+		FuncMakeRaw:    func() error { return nil },
+		FuncExitRaw:    func() error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("readline.NewEx: %v", err)
