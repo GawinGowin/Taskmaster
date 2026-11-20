@@ -23,106 +23,47 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 	targets := ev.targets
 	switch ev.cmd {
 	case CmdStart: // 引数あり
-		if len(targets) == 0 {
-			return []string{"start: requires a target"}
-		}
-		msg := []string{}
-		seen := map[string]*process.Process{}
-		for _, t := range targets {
-			if c.shutdown {
-				msg = append(msg, fmt.Sprintf("%s: ERROR (shutting down)", t))
-				continue
-			}
-			covered := false
-			ps, individual, errLine := c.resolveOne(t)
-			if errLine != "" {
-				msg = append(msg, errLine)
-				continue
-			}
-			for _, p := range ps {
-				if _, ok := seen[p.ID()]; ok {
-					covered = true
-					continue
+		startAct := func(p *process.Process) (line string, acted bool) {
+			switch p.State() {
+			case process.Stopped, process.Exited, process.Fatal:
+				p.ResetRetries()
+				c.start(p, slog.String("by", "shell"))
+				if p.State() == process.Starting {
+					line = fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen())
+				} else if p.State() == process.Backoff || p.State() == process.Fatal {
+					line = fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State())
 				}
-				seen[p.ID()] = p
-
-				switch p.State() {
-				case process.Stopped, process.Exited, process.Fatal:
-					p.ResetRetries()
-					c.start(p, slog.String("by", "shell"))
-					if p.State() == process.Starting {
-						msg = append(msg, fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen()))
-					} else if p.State() == process.Backoff || p.State() == process.Fatal {
-						msg = append(msg, fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State()))
-					}
-					covered = true
-				case process.Stopping:
-					p.SetStartAfterStop(true)
-					msg = append(msg, fmt.Sprintf("%s: will start after stop", p.ID()))
-					covered = true
-				default:
-					if individual {
-						covered = true
-						msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
-					}
-				}
+				acted = true
+			case process.Stopping:
+				p.SetStartAfterStop(true)
+				line = fmt.Sprintf("%s: will start after stop", p.ID())
+				acted = true
 			}
-			if !covered && !individual {
-				msg = append(msg, fmt.Sprintf("%s: nothing to start", t))
-			}
+			return line, acted
 		}
+		msg := c.eachProcess("start", targets, true, startAct)
 		return msg
 	case CmdStop: // 引数あり
-		if len(targets) == 0 {
-			return []string{"stop: requires a target"}
-		}
-		msg := []string{}
-		seen := map[string]*process.Process{}
-		for _, t := range targets {
-			covered := false
-			ps, individual, errLine := c.resolveOne(t)
-			if errLine != "" {
-				msg = append(msg, errLine)
-				continue
-			}
-			for _, p := range ps {
-				if _, ok := seen[p.ID()]; ok {
-					covered = true
-					continue
-				}
-				seen[p.ID()] = p
-
-				switch p.State() {
-				case process.Starting, process.Running:
-					covered = true
-					msg = append(msg, fmt.Sprintf("%s: stopping (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime)))
-					c.stop(p, slog.String("by", "shell"))
-				case process.Backoff:
-					covered = true
-					msg = append(msg, fmt.Sprintf("%s: stopped", p.ID()))
-					c.stop(p, slog.String("by", "shell"))
-				case process.Stopping:
-					if p.StartAfterStop() {
-						covered = true
-						p.SetStartAfterStop(false)
-						msg = append(msg, fmt.Sprintf("%s: restart cancelled", p.ID()))
-					} else {
-						if individual {
-							covered = true
-							msg = append(msg, fmt.Sprintf("%s: ERROR (already STOPPING)", p.ID()))
-						}
-					}
-				default:
-					if individual {
-						covered = true
-						msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
-					}
+		stopAct := func(p *process.Process) (line string, acted bool) {
+			switch p.State() {
+			case process.Starting, process.Running:
+				acted = true
+				line = fmt.Sprintf("%s: stopping (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime))
+				c.stop(p, slog.String("by", "shell"))
+			case process.Backoff:
+				acted = true
+				line = fmt.Sprintf("%s: stopped", p.ID())
+				c.stop(p, slog.String("by", "shell"))
+			case process.Stopping:
+				if p.StartAfterStop() {
+					acted = true
+					p.SetStartAfterStop(false)
+					line = fmt.Sprintf("%s: restart cancelled", p.ID())
 				}
 			}
-			if !covered && !individual {
-				msg = append(msg, fmt.Sprintf("%s: nothing to stop", t))
-			}
+			return line, acted
 		}
+		msg := c.eachProcess("stop", targets, false, stopAct)
 		return msg
 
 	case CmdRestart: // 引数あり
@@ -209,4 +150,46 @@ func (c *Controller) resolveOne(t string) (procs []*process.Process, individual 
 	}
 	procs = append(procs, g.procs[i])
 	return procs, hasIndex, ""
+}
+
+func (c *Controller) eachProcess(
+	verb string, targets []string, rejectWhileShuttingDown bool,
+	act func(p *process.Process) (line string, acted bool),
+) []string {
+	if len(targets) == 0 {
+		return []string{fmt.Sprintf("%s: requires a target", verb)}
+	}
+	msg := []string{}
+	seen := map[string]*process.Process{}
+	for _, t := range targets {
+		if rejectWhileShuttingDown && c.shutdown {
+			msg = append(msg, fmt.Sprintf("%s: ERROR (shutting down)", t))
+			continue
+		}
+		covered := false
+		ps, individual, errLine := c.resolveOne(t)
+		if errLine != "" {
+			msg = append(msg, errLine)
+			continue
+		}
+		for _, p := range ps {
+			if _, ok := seen[p.ID()]; ok {
+				covered = true
+				continue
+			}
+			seen[p.ID()] = p
+			line, acted := act(p)
+			if acted {
+				covered = true
+				msg = append(msg, line)
+			} else if individual {
+				covered = true
+				msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
+			}
+		}
+		if !covered && !individual {
+			msg = append(msg, fmt.Sprintf("%s: nothing to %s", t, verb))
+		}
+	}
+	return msg
 }
