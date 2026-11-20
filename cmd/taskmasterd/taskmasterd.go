@@ -90,7 +90,7 @@ func run() error {
 
 	shell, err := controller.NewShell(c.Events(), c.Done(), c.Names)
 	if err != nil {
-		return fmt.Errorf("shell: %w", err)
+		return errors.Join(fmt.Errorf("shell: %w", err), c.Close())
 	}
 
 	go shell.Run()

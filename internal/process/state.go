@@ -21,7 +21,24 @@ const (
 )
 
 func (s State) String() string {
-	return [...]string{"STOPPED", "STARTING", "RUNNING", "BACKOFF", "STOPPING", "EXITED", "FATAL"}[s]
+	switch s {
+	case Stopped:
+		return "STOPPED"
+	case Starting:
+		return "STARTING"
+	case Running:
+		return "RUNNING"
+	case Backoff:
+		return "BACKOFF"
+	case Stopping:
+		return "STOPPING"
+	case Exited:
+		return "EXITED"
+	case Fatal:
+		return "FATAL"
+	default:
+		return fmt.Sprintf("State(%d)", int(s))
+	}
 }
 
 func (s State) IsTerminal() bool {

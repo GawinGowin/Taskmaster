@@ -6,6 +6,29 @@ import (
 	"time"
 )
 
+func TestState_String(t *testing.T) {
+	tests := []struct {
+		s    State
+		want string
+	}{
+		{Stopped, "STOPPED"},
+		{Starting, "STARTING"},
+		{Running, "RUNNING"},
+		{Backoff, "BACKOFF"},
+		{Stopping, "STOPPING"},
+		{Exited, "EXITED"},
+		{Fatal, "FATAL"},
+		// 範囲外の値でも panic せず、番号を残す
+		{State(7), "State(7)"},
+		{State(-1), "State(-1)"},
+	}
+	for _, tt := range tests {
+		if got := tt.s.String(); got != tt.want {
+			t.Errorf("State(%d).String() = %q, want %q", int(tt.s), got, tt.want)
+		}
+	}
+}
+
 func TestTable(t *testing.T) {
 	now := time.Date(2026, 11, 7, 15, 4, 5, 0, time.Local)
 	sts := []Status{
