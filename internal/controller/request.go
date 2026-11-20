@@ -30,7 +30,7 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 				c.start(p, slog.String("by", "shell"))
 				if p.State() == process.Starting {
 					line = fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen())
-				} else if p.State() == process.Backoff || p.State() == process.Fatal {
+				} else {
 					line = fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State())
 				}
 				acted = true
@@ -41,8 +41,7 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 			}
 			return line, acted
 		}
-		msg := c.eachProcess("start", targets, true, startAct)
-		return msg
+		return c.eachProcess("start", targets, true, startAct)
 	case CmdStop: // 引数あり
 		stopAct := func(p *process.Process) (line string, acted bool) {
 			switch p.State() {
@@ -63,8 +62,7 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 			}
 			return line, acted
 		}
-		msg := c.eachProcess("stop", targets, false, stopAct)
-		return msg
+		return c.eachProcess("stop", targets, false, stopAct)
 
 	case CmdRestart: // 引数あり
 		// restart を書くときは、c.stop() を呼んでから予約を立てる順番にする
@@ -152,6 +150,10 @@ func (c *Controller) resolveOne(t string) (procs []*process.Process, individual 
 	return procs, hasIndex, ""
 }
 
+// eachProcess は targets を展開し、重複を除いた各プロセスに act を呼んで応答の行を返す。
+// act は、何かしたら acted を true にして line を返し、何もしなければ状態を変えずに false を返す。
+// false のとき、個体指定なら eachProcess が `ERROR (already <STATE>)` を出す。
+// rejectWhileShuttingDown が true なら、shutdown 中は act を呼ばずに `ERROR (shutting down)` を返す。
 func (c *Controller) eachProcess(
 	verb string, targets []string, rejectWhileShuttingDown bool,
 	act func(p *process.Process) (line string, acted bool),
