@@ -975,3 +975,164 @@ func TestRequest_ShutdownCancelsReservation(t *testing.T) {
 		t.Errorf("STARTING への遷移が %d 行ある。want 1（最初の start だけ）\n%s", n, buf.String())
 	}
 }
+
+// TestRequest_Restart は、restart の応答の行を見る。
+// STARTING / RUNNING は停止シグナルを送って予約を立て、BACKOFF は STOPPED にしてからその場で起動する。
+// それ以外の状態は start と同じ。どの状態でも何かするので、already と nothing to restart は出ない。
+//
+// ケースごとにループを作り直し、setup を順に送ってから targets の restart を送る。
+func TestRequest_Restart(t *testing.T) {
+	const spawnErr = "fork/exec /nonexistent: no such file or directory"
+
+	for _, tc := range []struct {
+		name    string
+		setup   []step
+		targets []string
+		want    []string
+	}{
+		{
+			name:    "STARTING のプロセスに停止シグナルを送り、restarting を出す",
+			setup:   []step{{CmdStart, []string{"healthy"}}},
+			targets: []string{"healthy"},
+			want: []string{
+				"healthy:0: restarting (SIGTERM, SIGKILL in 1.0s)",
+				"healthy:1: restarting (SIGTERM, SIGKILL in 1.0s)",
+			},
+		},
+		{
+			name:    "STOPPED のプロセスは start と同じく起動する",
+			targets: []string{"healthy:0"},
+			want:    []string{"healthy:0: starting (pid N, gen 1)"},
+		},
+		{
+			name:    "BACKOFF のプロセスはその場で起動し直す",
+			setup:   []step{{CmdStart, []string{"nocmd"}}},
+			targets: []string{"nocmd"},
+			want:    []string{"nocmd:0: spawn failed (" + spawnErr + "), now BACKOFF"},
+		},
+		{
+			// startretries が 1 なので、retries を戻さないと 2 回目の失敗で FATAL に入る。
+			name:    "BACKOFF からの restart は retries を 0 に戻す",
+			setup:   []step{{CmdStart, []string{"nocmd1"}}},
+			targets: []string{"nocmd1"},
+			want:    []string{"nocmd1:0: spawn failed (" + spawnErr + "), now BACKOFF"},
+		},
+		{
+			name:    "FATAL のプロセスは起動し直す",
+			setup:   []step{{CmdStart, []string{"nocmd0"}}},
+			targets: []string{"nocmd0"},
+			want:    []string{"nocmd0:0: spawn failed (" + spawnErr + "), now FATAL"},
+		},
+		{
+			name: "STOPPING のプロセスは予約を立てる",
+			setup: []step{
+				{CmdStart, []string{"stubborn"}},
+				{CmdStop, []string{"stubborn"}},
+			},
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: will start after stop"},
+		},
+		{
+			name:    "まとめ指定が先なら、後ろの個体指定は捨てる",
+			setup:   []step{{CmdStart, []string{"healthy:0"}}},
+			targets: []string{"healthy", "healthy:0"},
+			want: []string{
+				"healthy:0: restarting (SIGTERM, SIGKILL in 1.0s)",
+				"healthy:1: starting (pid N, gen 1)",
+			},
+		},
+		{
+			name:    "エラーの引数があっても、ほかの引数は処理する",
+			targets: []string{"nosuch", "healthy:5", "healthy:1"},
+			want: []string{
+				"nosuch: ERROR (no such program)",
+				"healthy:5: ERROR (no such process, numprocs is 2)",
+				"healthy:1: starting (pid N, gen 1)",
+			},
+		},
+		{
+			name:    "対象が無ければ requires a target",
+			targets: nil,
+			want:    []string{"restart: requires a target"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newLoop(t, map[string]config.Program{
+				"healthy":  sleeper(2),
+				"stubborn": stubborn(),
+				"nocmd":    missing(3),
+				"nocmd1":   missing(1),
+				"nocmd0":   missing(0),
+			})
+			for _, s := range tc.setup {
+				request(t, c, s.cmd, s.targets...)
+			}
+			got := maskPid(request(t, c, CmdRestart, tc.targets...))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("restart %q = %q, want %q", tc.targets, got, tc.want)
+			}
+			quitAndWait(t, c, 3*time.Second)
+		})
+	}
+}
+
+// TestRequest_RestartWhileShuttingDown は、shutdown が始まったあとの restart に、引数ごとに shutting down を返すことを見る。
+// 予約を立てる前に返さないと、shutdown 中に子を起動して Run が返らなくなる。
+func TestRequest_RestartWhileShuttingDown(t *testing.T) {
+	c := newLoop(t, map[string]config.Program{"slow": stubborn()})
+
+	request(t, c, CmdStart, "slow")
+	request(t, c, CmdQuit)
+	got := request(t, c, CmdRestart, "slow", "nosuch")
+	want := []string{
+		"slow: ERROR (shutting down)",
+		"nosuch: ERROR (shutting down)",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("shutdown 中の restart slow nosuch = %q, want %q", got, want)
+	}
+
+	select {
+	case <-c.done:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("quit から 3 秒待っても Run が返らない")
+	}
+}
+
+// TestRequest_RestartStartsNextGen は、STARTING のプロセスを restart すると、
+// 停止シグナルで終わったあと、次の世代で起動し直すことを見る。
+// イベントログには STARTING → STOPPING、STOPPING → STOPPED、STOPPED → STARTING がこの順に出て、
+// 停止と起動の行には by=shell が付く。
+func TestRequest_RestartStartsNextGen(t *testing.T) {
+	var buf bytes.Buffer
+	c := newLoopWithLogger(t, map[string]config.Program{"stubborn": stubborn()},
+		slog.New(slog.NewTextHandler(&buf, nil)))
+
+	request(t, c, CmdStart, "stubborn")
+	request(t, c, CmdRestart, "stubborn")
+	awaitState(t, c, "stubborn:0", process.Starting)
+	quitAndWait(t, c, 3*time.Second)
+
+	lines := logLines(&buf)
+	stopping := indexAfter(lines, -1, "id=stubborn:0 from=STARTING to=STOPPING")
+	if stopping < 0 {
+		t.Fatalf("イベントログに STARTING → STOPPING の行が無い\n%s", buf.String())
+	}
+	if !slices.Contains(strings.Fields(lines[stopping]), "by=shell") {
+		t.Errorf("restart の停止の行に by=shell が無い: %s", lines[stopping])
+	}
+	stopped := indexAfter(lines, stopping, "id=stubborn:0 from=STOPPING to=STOPPED")
+	if stopped < 0 {
+		t.Fatalf("STARTING → STOPPING の後ろに STOPPING → STOPPED の行が無い\n%s", buf.String())
+	}
+	started := indexAfter(lines, stopped, "id=stubborn:0 from=STOPPED to=STARTING")
+	if started < 0 {
+		t.Fatalf("STOPPING → STOPPED の後ろに STOPPED → STARTING の行が無い\n%s", buf.String())
+	}
+	if !slices.Contains(strings.Fields(lines[started]), "by=shell") {
+		t.Errorf("restart の起動の行に by=shell が無い: %s", lines[started])
+	}
+	if indexAfter(lines, started, "msg=spawn id=stubborn:0 gen=2") < 0 {
+		t.Errorf("restart の起動の後ろに gen=2 の spawn の行が無い\n%s", buf.String())
+	}
+}

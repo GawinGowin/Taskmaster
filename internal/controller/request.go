@@ -23,50 +23,11 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 	targets := ev.targets
 	switch ev.cmd {
 	case CmdStart: // 引数あり
-		startAct := func(p *process.Process) (line string, acted bool) {
-			switch p.State() {
-			case process.Stopped, process.Exited, process.Fatal:
-				p.ResetRetries()
-				c.start(p, slog.String("by", "shell"))
-				if p.State() == process.Starting {
-					line = fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen())
-				} else {
-					line = fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State())
-				}
-				acted = true
-			case process.Stopping:
-				p.SetStartAfterStop(true)
-				line = fmt.Sprintf("%s: will start after stop", p.ID())
-				acted = true
-			}
-			return line, acted
-		}
-		return c.eachProcess("start", targets, true, startAct)
+		return c.eachProcess("start", targets, true, c.startOne)
 	case CmdStop: // 引数あり
-		stopAct := func(p *process.Process) (line string, acted bool) {
-			switch p.State() {
-			case process.Starting, process.Running:
-				acted = true
-				line = fmt.Sprintf("%s: stopping (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime))
-				c.stop(p, slog.String("by", "shell"))
-			case process.Backoff:
-				acted = true
-				line = fmt.Sprintf("%s: stopped", p.ID())
-				c.stop(p, slog.String("by", "shell"))
-			case process.Stopping:
-				if p.StartAfterStop() {
-					acted = true
-					p.SetStartAfterStop(false)
-					line = fmt.Sprintf("%s: restart cancelled", p.ID())
-				}
-			}
-			return line, acted
-		}
-		return c.eachProcess("stop", targets, false, stopAct)
-
+		return c.eachProcess("stop", targets, false, c.stopOne)
 	case CmdRestart: // 引数あり
-		// restart を書くときは、c.stop() を呼んでから予約を立てる順番にする
-		return []string{"not implemented"}
+		return c.eachProcess("restart", targets, true, c.restartOne)
 	case CmdStatus: // 引数あり
 		if len(targets) == 0 {
 			targets = append(targets, "all")
@@ -194,4 +155,59 @@ func (c *Controller) eachProcess(
 		}
 	}
 	return msg
+}
+
+func (c *Controller) startOne(p *process.Process) (line string, acted bool) {
+	switch p.State() {
+	case process.Stopped, process.Exited, process.Fatal:
+		p.ResetRetries()
+		c.start(p, slog.String("by", "shell"))
+		if p.State() == process.Starting {
+			line = fmt.Sprintf("%s: starting (pid %d, gen %d)", p.ID(), p.Pid(), p.Gen())
+		} else {
+			line = fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State())
+		}
+		acted = true
+	case process.Stopping:
+		p.SetStartAfterStop(true)
+		line = fmt.Sprintf("%s: will start after stop", p.ID())
+		acted = true
+	}
+	return line, acted
+}
+
+func (c *Controller) stopOne(p *process.Process) (line string, acted bool) {
+	switch p.State() {
+	case process.Starting, process.Running:
+		acted = true
+		line = fmt.Sprintf("%s: stopping (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime))
+		c.stop(p, slog.String("by", "shell"))
+	case process.Backoff:
+		acted = true
+		line = fmt.Sprintf("%s: stopped", p.ID())
+		c.stop(p, slog.String("by", "shell"))
+	case process.Stopping:
+		if p.StartAfterStop() {
+			acted = true
+			p.SetStartAfterStop(false)
+			line = fmt.Sprintf("%s: restart cancelled", p.ID())
+		}
+	}
+	return line, acted
+}
+
+func (c *Controller) restartOne(p *process.Process) (line string, acted bool) {
+	switch p.State() {
+	case process.Starting, process.Running:
+		c.stop(p, slog.String("by", "shell"))
+		p.SetStartAfterStop(true)
+		line = fmt.Sprintf("%s: restarting (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime))
+		acted = true
+	case process.Backoff:
+		c.stop(p, slog.String("by", "shell"))
+		return c.startOne(p)
+	default:
+		return c.startOne(p)
+	}
+	return line, acted
 }
