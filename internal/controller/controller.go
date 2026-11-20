@@ -143,6 +143,11 @@ func (c *Controller) Run(logger *slog.Logger) {
 
 			case process.Stopping:
 				c.to(slog.LevelInfo, p, process.Stopped, how)
+				if p.StartAfterStop() {
+					p.SetStartAfterStop(false)
+					p.ResetRetries()
+					c.start(p, slog.String("by", "shell"))
+				}
 
 			case process.Running:
 				restart := false
@@ -298,6 +303,7 @@ func (c *Controller) startFailed(p *process.Process, how slog.Attr) {
 }
 
 func (c *Controller) stop(p *process.Process, attrs ...slog.Attr) {
+	p.SetStartAfterStop(false)
 	switch p.State() {
 	case process.Starting, process.Running:
 		gen := p.Gen()

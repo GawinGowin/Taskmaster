@@ -811,3 +811,167 @@ func TestRequest_StopWhileShuttingDown(t *testing.T) {
 
 	quitAndWait(t, c, 4*time.Second)
 }
+
+// TestRequest_Reservation は、STOPPING のプロセスに打った start / stop の応答の行を見る。
+// start は予約を立てて will start after stop を出し、stop は予約があれば外して restart cancelled を出す。
+// どちらも行を出すので、まとめ指定でも nothing to start / nothing to stop を出さない。
+//
+// ケースごとにループを作り直し、setup を順に送ってから cmd を送る。stubborn は STOPPING に留まる。
+// 後始末の quit で Run が返ることで、shutdown が予約を外していることも確かめる。
+// 予約が残っていると、SIGKILL で終わったあとに STARTING へ進み、Run が返らない。
+func TestRequest_Reservation(t *testing.T) {
+	stopping := []step{
+		{CmdStart, []string{"stubborn"}},
+		{CmdStop, []string{"stubborn"}},
+	}
+	reserved := append(slices.Clone(stopping), step{CmdStart, []string{"stubborn"}})
+
+	for _, tc := range []struct {
+		name    string
+		setup   []step
+		cmd     Command
+		targets []string
+		want    []string
+	}{
+		{
+			name:    "STOPPING のプロセスを個体指定で start したら予約を立てる",
+			setup:   stopping,
+			cmd:     CmdStart,
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: will start after stop"},
+		},
+		{
+			name:    "STOPPING のプロセスをまとめ指定で start したら予約を立て、nothing to start を出さない",
+			setup:   stopping,
+			cmd:     CmdStart,
+			targets: []string{"stubborn"},
+			want:    []string{"stubborn:0: will start after stop"},
+		},
+		{
+			name:    "予約が立っていても、start はもう一度予約を立てる",
+			setup:   reserved,
+			cmd:     CmdStart,
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: will start after stop"},
+		},
+		{
+			name:    "予約が立っているプロセスを個体指定で stop したら予約を外す",
+			setup:   reserved,
+			cmd:     CmdStop,
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: restart cancelled"},
+		},
+		{
+			name:    "予約が立っているプロセスをまとめ指定で stop したら予約を外し、nothing to stop を出さない",
+			setup:   reserved,
+			cmd:     CmdStop,
+			targets: []string{"stubborn"},
+			want:    []string{"stubborn:0: restart cancelled"},
+		},
+		{
+			name:    "予約を外したあとの stop は already を出す",
+			setup:   append(slices.Clone(reserved), step{CmdStop, []string{"stubborn"}}),
+			cmd:     CmdStop,
+			targets: []string{"stubborn:0"},
+			want:    []string{"stubborn:0: ERROR (already STOPPING)"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newLoop(t, map[string]config.Program{"stubborn": stubborn()})
+			for _, s := range tc.setup {
+				request(t, c, s.cmd, s.targets...)
+			}
+			got := request(t, c, tc.cmd, tc.targets...)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("%s %q = %q, want %q", cmdName(tc.cmd), tc.targets, got, tc.want)
+			}
+			quitAndWait(t, c, 3*time.Second)
+		})
+	}
+}
+
+// logLines は、Run が返ったあとのイベントログを行に分ける。
+func logLines(buf *bytes.Buffer) []string {
+	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+}
+
+// indexAfter は、lines の from 番目より後ろで、substr を含む最初の行の位置を返す。無ければ -1。
+func indexAfter(lines []string, from int, substr string) int {
+	for i := from + 1; i < len(lines); i++ {
+		if strings.Contains(lines[i], substr) {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestRequest_StartAfterStop は、予約が立ったまま STOPPING のプロセスが終わると、
+// STOPPED に遷移してから、次の世代で起動し直すことを見る。
+// イベントログには STOPPING → STOPPED と STOPPED → STARTING の 2 行がこの順に出て、起動の行には by=shell が付く。
+//
+// stubborn は SIGWINCH を無視するので、stoptime の 1 秒後に SIGKILL で終わる。
+// ログを書くのは Run の goroutine だけなので、Run が返ってから読む。
+func TestRequest_StartAfterStop(t *testing.T) {
+	var buf bytes.Buffer
+	c := newLoopWithLogger(t, map[string]config.Program{"stubborn": stubborn()},
+		slog.New(slog.NewTextHandler(&buf, nil)))
+
+	request(t, c, CmdStart, "stubborn")
+	request(t, c, CmdStop, "stubborn")
+	request(t, c, CmdStart, "stubborn")
+	awaitState(t, c, "stubborn:0", process.Starting)
+	quitAndWait(t, c, 3*time.Second)
+
+	lines := logLines(&buf)
+	stopped := indexAfter(lines, -1, "id=stubborn:0 from=STOPPING to=STOPPED")
+	if stopped < 0 {
+		t.Fatalf("イベントログに STOPPING → STOPPED の行が無い\n%s", buf.String())
+	}
+	started := indexAfter(lines, stopped, "id=stubborn:0 from=STOPPED to=STARTING")
+	if started < 0 {
+		t.Fatalf("STOPPING → STOPPED の後ろに STOPPED → STARTING の行が無い\n%s", buf.String())
+	}
+	if !slices.Contains(strings.Fields(lines[started]), "by=shell") {
+		t.Errorf("予約による起動の行に by=shell が無い: %s", lines[started])
+	}
+	if indexAfter(lines, started, "msg=spawn id=stubborn:0 gen=2") < 0 {
+		t.Errorf("予約による起動の後ろに gen=2 の spawn の行が無い\n%s", buf.String())
+	}
+}
+
+// TestRequest_StopCancelsStart は、予約を外したプロセスが、終わったあと STOPPED に留まることを見る。
+// 予約による起動は STOPPED に遷移したのと同じイベントの処理の中で行うので、
+// status で STOPPED が見えた時点で、起動しなかったことが分かる。
+func TestRequest_StopCancelsStart(t *testing.T) {
+	c := newLoop(t, map[string]config.Program{"stubborn": stubborn()})
+
+	request(t, c, CmdStart, "stubborn")
+	request(t, c, CmdStop, "stubborn")
+	request(t, c, CmdStart, "stubborn")
+	request(t, c, CmdStop, "stubborn")
+	awaitState(t, c, "stubborn:0", process.Stopped)
+}
+
+// TestRequest_ShutdownCancelsReservation は、予約が立ったまま shutdown を始めると、
+// プロセスが終わっても起動し直さずに Run が返ることを見る。
+// 起動の行（to=STARTING）が最初の start の 1 行だけであることも、イベントログで確かめる。
+func TestRequest_ShutdownCancelsReservation(t *testing.T) {
+	var buf bytes.Buffer
+	c := newLoopWithLogger(t, map[string]config.Program{"stubborn": stubborn()},
+		slog.New(slog.NewTextHandler(&buf, nil)))
+
+	request(t, c, CmdStart, "stubborn")
+	request(t, c, CmdStop, "stubborn")
+	request(t, c, CmdStart, "stubborn")
+	quitAndWait(t, c, 3*time.Second)
+
+	n := 0
+	for _, l := range logLines(&buf) {
+		if strings.Contains(l, "id=stubborn:0") && strings.Contains(l, "to=STARTING") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("STARTING への遷移が %d 行ある。want 1（最初の start だけ）\n%s", n, buf.String())
+	}
+}

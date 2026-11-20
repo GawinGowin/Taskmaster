@@ -18,18 +18,19 @@ const SpawnMarker = "__spawn"
 var spawnHelper = "/proc/self/exe"
 
 type Process struct {
-	prog     config.Program
-	proc     *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
-	index    int
-	name     string
-	stdout   *Sink // nil なら破棄
-	stderr   *Sink // nil なら破棄
-	state    State
-	gen      uint64
-	retries  int
-	started  time.Time // (p *Process) Start() で設定
-	stopped  time.Time // (p *Process) SetStoppedtime() で設定
-	spawnErr string    // (p *Process) SetSpawnErr() で設定
+	prog           config.Program
+	proc           *os.Process // ループ専用。exec.Cmd は watcher だけが持つ
+	index          int
+	name           string
+	stdout         *Sink // nil なら破棄
+	stderr         *Sink // nil なら破棄
+	state          State
+	gen            uint64
+	retries        int
+	started        time.Time // (p *Process) Start() で設定
+	stopped        time.Time // (p *Process) SetStoppedtime() で設定
+	spawnErr       string    // (p *Process) SetSpawnErr() で設定
+	startAfterStop bool      // プロセスが STOPPING の際、このフラグのON/OFFで次の状態確認でStartingに自動遷移できるフラグ、起動予約
 }
 
 func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) (*Process, error) {
@@ -209,6 +210,14 @@ func (p *Process) SetStoppedtime(t time.Time) {
 
 func (p *Process) SetSpawnErr(e string) {
 	p.spawnErr = e
+}
+
+func (p *Process) StartAfterStop() bool {
+	return p.startAfterStop
+}
+
+func (p *Process) SetStartAfterStop(b bool) {
+	p.startAfterStop = b
 }
 
 func envSlice(m map[string]string) []string {

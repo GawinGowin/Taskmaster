@@ -46,8 +46,8 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 				}
 				seen[p.ID()] = p
 
-				isStartable := (p.State() == process.Stopped || p.State() == process.Exited || p.State() == process.Fatal)
-				if isStartable {
+				switch p.State() {
+				case process.Stopped, process.Exited, process.Fatal:
 					p.ResetRetries()
 					c.start(p, slog.String("by", "shell"))
 					if p.State() == process.Starting {
@@ -56,9 +56,15 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 						msg = append(msg, fmt.Sprintf("%s: spawn failed (%s), now %s", p.ID(), p.SpawnErr(), p.State()))
 					}
 					covered = true
-				} else if individual {
+				case process.Stopping:
+					p.SetStartAfterStop(true)
+					msg = append(msg, fmt.Sprintf("%s: will start after stop", p.ID()))
 					covered = true
-					msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
+				default:
+					if individual {
+						covered = true
+						msg = append(msg, fmt.Sprintf("%s: ERROR (already %s)", p.ID(), p.State()))
+					}
 				}
 			}
 			if !covered && !individual {
@@ -95,6 +101,17 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 					covered = true
 					msg = append(msg, fmt.Sprintf("%s: stopped", p.ID()))
 					c.stop(p, slog.String("by", "shell"))
+				case process.Stopping:
+					if p.StartAfterStop() {
+						covered = true
+						p.SetStartAfterStop(false)
+						msg = append(msg, fmt.Sprintf("%s: restart cancelled", p.ID()))
+					} else {
+						if individual {
+							covered = true
+							msg = append(msg, fmt.Sprintf("%s: ERROR (already STOPPING)", p.ID()))
+						}
+					}
 				default:
 					if individual {
 						covered = true
@@ -109,6 +126,7 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 		return msg
 
 	case CmdRestart: // 引数あり
+		// restart を書くときは、c.stop() を呼んでから予約を立てる順番にする
 		return []string{"not implemented"}
 	case CmdStatus: // 引数あり
 		if len(targets) == 0 {
