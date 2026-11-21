@@ -1,0 +1,9 @@
+# 期待: 成功 / p の Exitcodes == ExitCodes{0, 2}
+# 狙い: リストを指すエイリアスは、null の判定に巻き込まれずに普通のリストとして読まれる
+programs:
+  anchor:
+    cmd: /bin/true
+    exitcodes: &codes [2, 0]
+  p:
+    cmd: /bin/true
+    exitcodes: *codes

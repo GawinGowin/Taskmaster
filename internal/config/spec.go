@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -52,6 +54,7 @@ func (c *ExitCodes) UnmarshalYAML(n *yaml.Node) error {
 			}
 			xs = append(xs, x)
 		}
+		slices.Sort(xs)
 		*c = xs
 		return nil
 	}
@@ -216,6 +219,7 @@ var programFields = map[string]bool{
 }
 
 func (s *Program) UnmarshalYAML(n *yaml.Node) error {
+	defaultExitcodes := ExitCodes{0}
 	type plain Program
 	if n.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: program must be a mapping", n.Line)
@@ -230,7 +234,7 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 		Numprocs:     1,
 		Autostart:    true,
 		Autorestart:  Unexpected,
-		Exitcodes:    ExitCodes{0},
+		Exitcodes:    defaultExitcodes,
 		Starttime:    1,
 		Startretries: 3,
 		Stopsignal:   Stopsignal(syscall.SIGTERM),
@@ -257,6 +261,80 @@ func (s *Program) UnmarshalYAML(n *yaml.Node) error {
 	if p.Stoptime < 0 {
 		return fmt.Errorf("line %d: stoptime must be >= 0, got %d", n.Line, p.Stoptime)
 	}
+	if len(p.Env) == 0 { // env: {} と config に記載したとき nil とする
+		p.Env = nil
+	}
+	// 値なし（exitcodes: / ~）だと yaml.v3 が nil にするので、ほかのフィールドと同じく初期値に戻す。
+	// nil になるのは値なしのときだけ（ExitCodes.UnmarshalYAML は [] でも nil を返さない）。
+	if p.Exitcodes == nil {
+		p.Exitcodes = defaultExitcodes
+	}
 	*s = Program(p)
 	return nil
+}
+
+type Change struct {
+	Name        string
+	Kind        ChangeKind
+	OldNumprocs int
+	NewNumprocs int
+}
+
+type ChangeKind int
+
+const (
+	Unchanged ChangeKind = iota
+	Added
+	Removed
+	Resized
+	Changed
+)
+
+func Diff(old *Config, new *Config) []Change {
+	changes := []Change{}
+	for p, v := range new.Programs {
+		cOld := old.Programs[p]
+		cNew := new.Programs[p]
+		cOld.Numprocs = 0
+		cNew.Numprocs = 0
+		if _, ok := old.Programs[p]; !ok {
+			changes = append(changes, Change{
+				Name:        p,
+				Kind:        Added,
+				OldNumprocs: 0,
+				NewNumprocs: v.Numprocs,
+			})
+		} else {
+			var kind ChangeKind
+			if reflect.DeepEqual(cOld, cNew) {
+				if old.Programs[p].Numprocs != new.Programs[p].Numprocs {
+					kind = Resized
+				} else {
+					kind = Unchanged
+				}
+			} else {
+				kind = Changed
+			}
+			changes = append(changes, Change{
+				Name:        p,
+				Kind:        kind,
+				OldNumprocs: old.Programs[p].Numprocs,
+				NewNumprocs: new.Programs[p].Numprocs,
+			})
+		}
+	}
+	for p, v := range old.Programs {
+		if _, ok := new.Programs[p]; !ok {
+			changes = append(changes, Change{
+				Name:        p,
+				Kind:        Removed,
+				OldNumprocs: v.Numprocs,
+				NewNumprocs: 0,
+			})
+		}
+	}
+	slices.SortFunc(changes, func(a Change, b Change) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return changes
 }

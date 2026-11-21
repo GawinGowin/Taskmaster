@@ -1,0 +1,7 @@
+# 期待: 成功 / Exitcodes == ExitCodes{0}（書かないときと同じ既定値）
+# 狙い: yaml.v3 は値なしの slice を nil にし、ExitCodes の UnmarshalYAML を呼ばない。
+#   ほかのフィールドは値なしでも既定値のままなので、exitcodes だけ既定が消えないことを確かめる
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes:

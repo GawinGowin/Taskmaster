@@ -1,0 +1,10 @@
+# 期待: 成功 / p の Exitcodes == ExitCodes{0}
+# 狙い: null を指すエイリアス。p の値のノードは AliasNode で、Tag は "" になる。
+#   ShortTag() はエイリアスの先をたどって "!!null" を返すが、Tag を直接 "!!null" と比べると見逃す
+programs:
+  anchor:
+    cmd: /bin/true
+    exitcodes: &none ~
+  p:
+    cmd: /bin/true
+    exitcodes: *none

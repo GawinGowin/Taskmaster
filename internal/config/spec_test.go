@@ -21,6 +21,7 @@ func TestExitCodes_UnmarshalYAML(t *testing.T) {
 		{name: "複数要素のリスト", yaml: "[0, 2]", want: config.ExitCodes{0, 2}},
 		{name: "マッピング", yaml: "{a: 1}", wantErr: true},
 		{name: "int 変換不可能", yaml: "abc", wantErr: true},
+		{name: "空文字", yaml: `""`, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -134,9 +135,44 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			want: def(func(p *config.Program) { p.Exitcodes = config.ExitCodes{0, 2, 70} }),
 		},
 		{
-			name:     "exitcodes: [] は nil でなく空スライスとして通る（仕様は未決）",
+			name:     "exitcodes: [] は nil でなく空スライスとして通る",
 			yamlFile: "edge_exitcodes_empty_list", program: "p",
 			want: def(func(p *config.Program) { p.Exitcodes = config.ExitCodes{} }),
+		},
+		// 値なしの exitcodes。yaml.v3 は null の slice を nil にし、ExitCodes の UnmarshalYAML を呼ばない。
+		// 放っておくと既定の [0] が消え、どの終了も予期しない終了になる（autorestart: unexpected なら毎回再起動）。
+		// ほかのフィールドは値なしでも既定のままなので、exitcodes もそろえる。
+		// null の綴りは複数あり、ノードの Value は "" / "~" / "null" / "NULL" と違う。Tag はどれも !!null。
+		// null を指すエイリアスは AliasNode で Tag が "" になり、ShortTag() だけが "!!null" を返す。
+		{
+			name:     "exitcodes: （値なし）は既定の [0] のまま",
+			yamlFile: "edge_exitcodes_null", program: "p",
+			want: def(nil),
+		},
+		{
+			name:     "exitcodes: ~ は既定の [0] のまま",
+			yamlFile: "edge_exitcodes_null_tilde", program: "p",
+			want: def(nil),
+		},
+		{
+			name:     "exitcodes: null は既定の [0] のまま",
+			yamlFile: "edge_exitcodes_null_word", program: "p",
+			want: def(nil),
+		},
+		{
+			name:     "exitcodes: NULL は既定の [0] のまま",
+			yamlFile: "edge_exitcodes_null_upper", program: "p",
+			want: def(nil),
+		},
+		{
+			name:     "null を指すエイリアスの exitcodes は既定の [0] のまま",
+			yamlFile: "edge_exitcodes_null_alias", program: "p",
+			want: def(nil),
+		},
+		{
+			name:     "リストを指すエイリアスの exitcodes はリストとして読まれる",
+			yamlFile: "valid_exitcodes_list_alias", program: "p",
+			want: def(func(p *config.Program) { p.Exitcodes = config.ExitCodes{0, 2} }),
 		},
 		{
 			name:     "umask 未指定なら nil",
@@ -168,6 +204,8 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 		{name: "exitcodes がマッピングならエラー", yamlFile: "invalid_exitcodes_mapping", program: "p", wantErr: true},
 		{name: "exitcodes が int にできない文字列ならエラー", yamlFile: "invalid_exitcodes_string", program: "p", wantErr: true},
 		{name: "exitcodes がリストだが要素が int でないならエラー", yamlFile: "invalid_exitcodes_list_of_strings", program: "p", wantErr: true},
+		// Value は値なしと同じ "" だが、Tag は !!str で null ではない。
+		{name: "exitcodes: \"\" は null ではなくエラー", yamlFile: "invalid_exitcodes_empty_string", program: "p", wantErr: true},
 		{name: "program がマッピングでなければエラー", yamlFile: "invalid_program_not_mapping", program: "p", wantErr: true},
 		{name: "YAML 構文エラー", yamlFile: "invalid_syntax", program: "p", wantErr: true},
 		{name: "タブインデントはエラー", yamlFile: "invalid_tab_indent", program: "p", wantErr: true},
@@ -218,6 +256,51 @@ func TestProgram_UnmarshalYAML(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("got = %#v, want = %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestProgram_ExitCodesDefaultNotShared は、既定の [0] を program どうしで共有しないことを固定する。
+// 既定値をパッケージ変数 1 つに置いてそのまま代入すると、全 program の Exitcodes が同じ配列を指す。
+// どこかで 1 つの program の Exitcodes を書き換えると、ほかの program の判定まで変わる。
+// 書かない場合（Decode 前の初期値）と値なしの場合（Decode 後の復元）の両方を見る。
+func TestProgram_ExitCodesDefaultNotShared(t *testing.T) {
+	src := `
+programs:
+  omitted:
+    cmd: /bin/true
+  null_a:
+    cmd: /bin/true
+    exitcodes:
+  null_b:
+    cmd: /bin/true
+    exitcodes: ~
+`
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	names := []string{"omitted", "null_a", "null_b"}
+	for _, name := range names {
+		if got := cfg.Programs[name].Exitcodes; !reflect.DeepEqual(got, config.ExitCodes{0}) {
+			t.Fatalf("%s: Exitcodes = %#v, want ExitCodes{0}", name, got)
+		}
+	}
+
+	for _, target := range names {
+		t.Run(target+" を書き換える", func(t *testing.T) {
+			saved := cfg.Programs[target].Exitcodes[0]
+			cfg.Programs[target].Exitcodes[0] = 99
+			defer func() { cfg.Programs[target].Exitcodes[0] = saved }()
+
+			for _, other := range names {
+				if other == target {
+					continue
+				}
+				if got := cfg.Programs[other].Exitcodes; got[0] != 0 {
+					t.Errorf("%s: Exitcodes = %#v, want ExitCodes{0}（%s と配列を共有している）", other, got, target)
+				}
 			}
 		})
 	}

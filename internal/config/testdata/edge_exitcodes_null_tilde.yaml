@@ -1,0 +1,6 @@
+# 期待: 成功 / Exitcodes == ExitCodes{0}
+# 狙い: ~ も null。ノードの Value は "~" なので、Value が空かで null を判定すると見逃す
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: ~

@@ -160,7 +160,7 @@ programs:
 | `numprocs` | `1` | 起動しておくプロセス数（1 以上） |
 | `autostart` | `true` | taskmaster の起動時に立ち上げるか |
 | `autorestart` | `unexpected` | `always` / `never` / `unexpected` |
-| `exitcodes` | `[0]` | 期待される終了コード。スカラーでもリストでもよい |
+| `exitcodes` | `[0]` | 期待される終了コード。スカラーでもリストでもよい。値なし（`exitcodes:`）は未指定と同じ `[0]`。`[]` はどの終了も予期しない終了として扱う |
 | `starttime` | `1` | 起動成功とみなすまでの稼働秒数 |
 | `startretries` | `3` | 起動失敗時の再試行回数 |
 | `stopsignal` | `TERM` | 正常停止に使うシグナル。`TERM` `HUP` `INT` `QUIT` `KILL` `USR1` `USR2`（`SIG` 接頭辞と番号も可） |

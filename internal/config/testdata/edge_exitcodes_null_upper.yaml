@@ -1,0 +1,6 @@
+# 期待: 成功 / Exitcodes == ExitCodes{0}
+# 狙い: NULL も null。Value は "NULL" なので、Value を "~" や "null" と比べて判定すると見逃す
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: NULL

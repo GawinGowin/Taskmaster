@@ -1,0 +1,6 @@
+# 期待: エラー（ScalarNode で Tag は !!str。int に変換できない）
+# 狙い: Value は値なしと同じ "" だが null ではない。Value が空かで null を判定すると、既定の [0] として通ってしまう
+programs:
+  p:
+    cmd: /bin/true
+    exitcodes: ""
