@@ -30,7 +30,7 @@ type Process struct {
 	started        time.Time // (p *Process) Start() で設定
 	stopped        time.Time // (p *Process) SetStoppedtime() で設定
 	spawnErr       string    // (p *Process) SetSpawnErr() で設定
-	startAfterStop bool      // プロセスが STOPPING の際、このフラグのON/OFFで次の状態確認でStartingに自動遷移できるフラグ、起動予約
+	startAfterStop string    // 起動予約、何によって起動予約されたかの文字列を持つ
 }
 
 func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) (*Process, error) {
@@ -212,12 +212,12 @@ func (p *Process) SetSpawnErr(e string) {
 	p.spawnErr = e
 }
 
-func (p *Process) StartAfterStop() bool {
+func (p *Process) StartAfterStop() string {
 	return p.startAfterStop
 }
 
-func (p *Process) SetStartAfterStop(b bool) {
-	p.startAfterStop = b
+func (p *Process) SetStartAfterStop(by string) {
+	p.startAfterStop = by
 }
 
 func envSlice(m map[string]string) []string {

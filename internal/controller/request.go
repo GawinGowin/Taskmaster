@@ -169,7 +169,7 @@ func (c *Controller) startOne(p *process.Process) (line string, acted bool) {
 		}
 		acted = true
 	case process.Stopping:
-		p.SetStartAfterStop(true)
+		p.SetStartAfterStop("shell")
 		line = fmt.Sprintf("%s: will start after stop", p.ID())
 		acted = true
 	}
@@ -187,9 +187,9 @@ func (c *Controller) stopOne(p *process.Process) (line string, acted bool) {
 		line = fmt.Sprintf("%s: stopped", p.ID())
 		c.stop(p, slog.String("by", "shell"))
 	case process.Stopping:
-		if p.StartAfterStop() {
+		if p.StartAfterStop() != "" {
 			acted = true
-			p.SetStartAfterStop(false)
+			p.SetStartAfterStop("")
 			line = fmt.Sprintf("%s: restart cancelled", p.ID())
 		}
 	}
@@ -200,7 +200,7 @@ func (c *Controller) restartOne(p *process.Process) (line string, acted bool) {
 	switch p.State() {
 	case process.Starting, process.Running:
 		c.stop(p, slog.String("by", "shell"))
-		p.SetStartAfterStop(true)
+		p.SetStartAfterStop("shell")
 		line = fmt.Sprintf("%s: restarting (%s, SIGKILL in %.1fs)", p.ID(), p.Spec().Stopsignal, float64(p.Spec().Stoptime))
 		acted = true
 	case process.Backoff:
