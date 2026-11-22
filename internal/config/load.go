@@ -10,7 +10,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-func validateProgramNames(c *Config) error {
+func validateProgram(c *Config) error {
 	names := make([]string, 0, len(c.Programs))
 	for k := range c.Programs {
 		names = append(names, k)
@@ -29,6 +29,9 @@ func validateProgramNames(c *Config) error {
 				b == '_' || b == '.' || b == '-') {
 				return fmt.Errorf("program name %q: character %q at position %d is not allowed (use letters, digits, '_', '.' or '-')", n, b, i+1)
 			}
+		}
+		if len(c.Programs[n].Cmd) == 0 {
+			 return fmt.Errorf("%q: cmd must not be empty", n)
 		}
 	}
 	return nil
@@ -61,7 +64,7 @@ func LoadFrom(r io.Reader, name string) (_ *Config, err error) {
 		}
 		return nil, errors.New("config file has multiple YAML documents")
 	}
-	err = validateProgramNames(cfg)
+	err = validateProgram(cfg)
 	if err != nil {
 		return nil, err
 	}

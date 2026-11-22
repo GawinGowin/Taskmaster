@@ -128,6 +128,60 @@ func TestConfig_InvalidProgramNameIsDeterministic(t *testing.T) {
 	}
 }
 
+// TestConfig_NullProgram は、program の値を書かなかったとき（null）にエラーになること。
+// yaml.v3 は値が null だと Program.UnmarshalYAML を呼ばずに 0 値を入れるので、
+// 既定値も cmd is required / numprocs >= 1 の検査も通らず、cmd が空で numprocs が 0 の program が読めてしまう。
+// 検査はデコード後に program 名の検査と同じ場所で行うので、行番号は求めず、名前が引用符付きで出ることだけを見る。
+func TestConfig_NullProgram(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string // a: のあとに書く値
+	}{
+		{name: "値なし", value: ""},
+		{name: "チルダ", value: " ~"},
+		{name: "null", value: " null"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "programs:\n  a:" + tt.value + "\n  b:\n    cmd: /bin/true\n"
+			got, err := config.LoadFrom(strings.NewReader(src), "probe.yaml")
+			logErr(t, err)
+			if err == nil {
+				t.Fatalf("エラーにならなかった。a = %#v", got.Programs["a"])
+			}
+			if !strings.Contains(err.Error(), `"a"`) {
+				t.Errorf("エラーに名前 \"a\" が出ていない: %v", err)
+			}
+		})
+	}
+}
+
+// TestConfig_NullProgramIsDeterministic は、null の program が 2 つあるとき、
+// 毎回名前の昇順で最初のもの（a）を報告すること。理由は TestConfig_InvalidProgramNameIsDeterministic と同じ。
+func TestConfig_NullProgramIsDeterministic(t *testing.T) {
+	src := "programs:\n  b:\n  a:\n"
+
+	var first string
+	for i := 0; i < 20; i++ {
+		_, err := config.LoadFrom(strings.NewReader(src), "probe.yaml")
+		if err == nil {
+			t.Fatal("null の program がエラーにならなかった")
+		}
+		if i == 0 {
+			first = err.Error()
+			t.Logf("実際のエラー出力:\n%s", first)
+			if !strings.Contains(first, `"a"`) {
+				t.Errorf("名前の昇順で最初の \"a\" を報告していない: %s", first)
+			}
+			continue
+		}
+		if err.Error() != first {
+			t.Fatalf("実行ごとにエラーが変わる（キーをソートしていない）:\n 1 回目: %s\n %d 回目: %s", first, i+1, err.Error())
+		}
+	}
+}
+
 func keysOf(c *config.Config) []string {
 	if c == nil {
 		return nil

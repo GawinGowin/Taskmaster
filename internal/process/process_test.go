@@ -11,47 +11,9 @@ import (
 // このファイルは内部テスト（package process）。exec.Cmd の組み立てが設計どおりか、
 // 外から観測できない場所を直接見るため。API の使い勝手を見るテストは外部パッケージで書く。
 
-// newProcess は New を panic を握って呼ぶ。設定由来の値を添字で触る箇所があるので、
-// エラーを返すべき場面で落ちていないことを見分けられるようにする。出力は破棄（nil）にする。
-func newProcess(t *testing.T, name string, index int, p *config.Program) (got *Process, err error, panicked any) {
-	t.Helper()
-	defer func() { panicked = recover() }()
-	got, err = New(p, name, index, nil, nil)
-	return got, err, nil
-}
-
 // minimal は起動できる最小の Program を返す。
 func minimal() *config.Program {
 	return &config.Program{Cmd: config.Command{"/bin/true"}}
-}
-
-// TestNew_EmptyCmd は空の argv で panic せずエラーを返すことを見る。
-//
-// config パッケージは cmd が空でないことを保証しているが、New は config.Program を
-// 直接受け取るので、その保証が効かない経路（テストや将来の呼び出し元）が存在する。
-// 保証を前提に p.Cmd[0] を触ると、そこで index out of range になる。
-func TestNew_EmptyCmd(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		prog *config.Program
-	}{
-		{name: "Cmd が nil", prog: &config.Program{}},
-		{name: "Cmd が空スライス", prog: &config.Program{Cmd: config.Command{}}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err, panicked := newProcess(t, "p", 0, tt.prog)
-			if panicked != nil {
-				t.Fatalf("panic: %v （添字の前に長さを見ていない）", panicked)
-			}
-			if err == nil {
-				t.Fatal("err = nil, want エラー")
-			}
-			t.Logf("実際のエラー出力:\n%v", err)
-			if !strings.Contains(err.Error(), "p:0") {
-				t.Errorf("どの program のどのプロセスか分からない: %q", err)
-			}
-		})
-	}
 }
 
 // TestBuildCmd_Wires は exec.Cmd の組み立てを見る。
@@ -61,13 +23,7 @@ func TestBuildCmd_Wires(t *testing.T) {
 	prog.Cmd = config.Command{"/bin/echo", "hello world"}
 	prog.Workingdir = "/tmp"
 
-	p, err, panicked := newProcess(t, "healthy", 1, prog)
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(prog, "healthy", 1, nil, nil)
 	cmd := p.buildCmd()
 
 	if cmd.Path != "/bin/echo" {
@@ -101,13 +57,7 @@ func TestBuildCmd_EnvInheritsAndOverrides(t *testing.T) {
 	prog := minimal()
 	prog.Env = map[string]string{"TM_TEST_OVERRIDE": "from-config", "TM_TEST_NEW": "added"}
 
-	p, err, panicked := newProcess(t, "p", 0, prog)
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(prog, "p", 0, nil, nil)
 	cmd := p.buildCmd()
 
 	if !contains(cmd.Env, "TM_TEST_INHERITED=from-parent") {
@@ -125,13 +75,7 @@ func TestBuildCmd_EnvInheritsAndOverrides(t *testing.T) {
 // TestBuildCmd_EnvNilInherits は env を書かなかったときに nil のままであることを見る。
 // nil は os/exec にとって「親の環境をそのまま使う」の意味。
 func TestBuildCmd_EnvNilInherits(t *testing.T) {
-	p, err, panicked := newProcess(t, "p", 0, minimal())
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(minimal(), "p", 0, nil, nil)
 	if cmd := p.buildCmd(); cmd.Env != nil {
 		t.Errorf("Env = %#v, want nil（未指定は継承）", cmd.Env)
 	}
@@ -141,13 +85,7 @@ func TestBuildCmd_EnvNilInherits(t *testing.T) {
 // reload で設定が差し替わっても、走行中のプロセスは起動時の値を見続ける。
 func TestNew_PinsSpec(t *testing.T) {
 	prog := minimal()
-	p, err, panicked := newProcess(t, "p", 0, prog)
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(prog, "p", 0, nil, nil)
 
 	prog.Stoptime = 99 // 呼び出し元が持っている Program を後から書き換える
 	if p.prog.Stoptime == 99 {
@@ -159,13 +97,7 @@ func TestNew_PinsSpec(t *testing.T) {
 // Process は「hello:0 という枠」で、起動のたびに Start() が exec.Cmd を作り直す。
 // New で作ると、exec.Cmd は 1 回しか Start() できないので再起動で詰まる。
 func TestNew_DoesNotBuildCmd(t *testing.T) {
-	p, err, panicked := newProcess(t, "p", 0, minimal())
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(minimal(), "p", 0, nil, nil)
 	if p.proc != nil {
 		t.Errorf("proc = %#v, want nil（Start() 前に起動している）", p.proc)
 	}
@@ -177,13 +109,7 @@ func TestNew_DoesNotBuildCmd(t *testing.T) {
 // TestBuildCmd_Fresh は buildCmd が呼ぶたびに別の exec.Cmd を返すことを見る。
 // 使い回すと 2 回目の Start() が "exec: already started" で失敗する。
 func TestBuildCmd_Fresh(t *testing.T) {
-	p, err, panicked := newProcess(t, "p", 0, minimal())
-	if panicked != nil {
-		t.Fatalf("panic: %v", panicked)
-	}
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(minimal(), "p", 0, nil, nil)
 	first, second := p.buildCmd(), p.buildCmd()
 	if first == second {
 		t.Error("同じ *exec.Cmd を返している（再起動で Start() できない）")
@@ -216,10 +142,7 @@ func last(env []string, prefix string) string {
 func TestBuildCmd_LeavesOutputNil(t *testing.T) {
 	out, _ := newTestSink(t)
 	errS, _ := newTestSink(t)
-	p, err := New(minimal(), "p", 0, out, errS)
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
+	p := New(minimal(), "p", 0, out, errS)
 	cmd := p.buildCmd()
 	if cmd.Stdout != nil {
 		t.Errorf("cmd.Stdout = %#v, want nil", cmd.Stdout)
@@ -252,10 +175,7 @@ func shell(script string) *config.Program {
 // 破棄のときは cmd.Stdout を nil のまま残し、os/exec に /dev/null を開かせる。
 // nil の *os.File を入れてしまうと、子は閉じた fd に書いて失敗する。
 func TestStart_Discard(t *testing.T) {
-	p, err := New(shell("echo out && echo err >&2"), "p", 0, nil, nil)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	p := New(shell("echo out && echo err >&2"), "p", 0, nil, nil)
 	if !startAndWait(t, p) {
 		t.Error("子が失敗した（破棄のはずの fd に書けていない）")
 	}
@@ -265,10 +185,7 @@ func TestStart_Discard(t *testing.T) {
 func TestStart_ToSink(t *testing.T) {
 	out, outPath := newTestSink(t)
 	errS, errPath := newTestSink(t)
-	p, err := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	p := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
 	if !startAndWait(t, p) {
 		t.Fatal("子が失敗した")
 	}
@@ -317,15 +234,9 @@ func TestStart_ClosesPipes(t *testing.T) {
 	errS, _ := newTestSink(t)
 
 	// 最初の os.Pipe() でランタイムが poller の fd を開くので、数える前に 1 回起動しておく。
-	ok, err := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	ok := New(shell("echo out && echo err >&2"), "p", 0, out, errS)
 	startAndWait(t, ok)
-	ng, err := New(&config.Program{Cmd: config.Command{"/nonexistent/taskmaster-test"}}, "p", 0, out, errS)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	ng := New(&config.Program{Cmd: config.Command{"/nonexistent/taskmaster-test"}}, "p", 0, out, errS)
 
 	// 閉じ忘れなら本数は増える。減る分（ランタイムの都合など）は見ない。
 	t.Run("成功", func(t *testing.T) {

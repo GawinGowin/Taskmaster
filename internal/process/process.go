@@ -33,11 +33,7 @@ type Process struct {
 	startAfterStop string    // 起動予約、何によって起動予約されたかの文字列を持つ
 }
 
-func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) (*Process, error) {
-	if len(p.Cmd) == 0 {
-		return nil, fmt.Errorf("%s:%d: cmd must not be empty", name, index)
-	}
-
+func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) *Process {
 	return &Process{
 		prog:   *p,
 		proc:   nil, // Start() にて設定する
@@ -47,7 +43,7 @@ func New(p *config.Program, name string, index int, stdout *Sink, stderr *Sink) 
 		stderr: stderr,
 		state:  Stopped,
 		gen:    0,
-	}, nil
+	}
 }
 
 func IsSpawned(args []string) bool {

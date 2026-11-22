@@ -49,10 +49,16 @@ func New(cfgPath string, cfg *config.Config) (*Controller, error) {
 
 	for _, name := range c.order {
 		program := cfg.Programs[name]
-		group, err := c.newProgramGroup(&program, name)
+
+		outSink, err := c.sinkFor(string(program.Stdout))
 		if err != nil {
-			return nil, errors.Join(err, c.Close())
+			return nil, errors.Join(fmt.Errorf("%s: stdout: %w", name, err), c.Close())
 		}
+		errSink, err := c.sinkFor(string(program.Stderr))
+		if err != nil {
+			return nil, errors.Join(fmt.Errorf("%s: stderr: %w", name, err), c.Close())
+		}
+		group := c.newProgramGroup(&program, name, outSink, errSink)
 		c.groups[name] = group
 		for _, p := range group.procs {
 			c.byID[p.ID()] = p
@@ -394,25 +400,14 @@ type ProgramGroup struct {
 	procs  []*process.Process
 }
 
-func (c *Controller) newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
+func (c *Controller) newProgramGroup(p *config.Program, name string, outSink *process.Sink, errSink *process.Sink) *ProgramGroup {
 	var pg ProgramGroup
-	var err error
-	pg.stdout, err = c.sinkFor(string(p.Stdout))
-	if err != nil {
-		return nil, fmt.Errorf("%s: stdout: %w", name, err)
-	}
-	pg.stderr, err = c.sinkFor(string(p.Stderr))
-	if err != nil {
-		return nil, fmt.Errorf("%s: stderr: %w", name, err)
-	}
+	pg.stdout = outSink
+	pg.stderr = errSink
 	for i := 0; i < p.Numprocs; i++ {
-		proc, err := process.New(p, name, i, pg.stdout, pg.stderr)
-		if err != nil {
-			return nil, err
-		}
-		pg.procs = append(pg.procs, proc)
+		pg.procs = append(pg.procs, process.New(p, name, i, pg.stdout, pg.stderr))
 	}
-	return &pg, nil
+	return &pg
 }
 
 func (c *Controller) sinkFor(path string) (*process.Sink, error) {
