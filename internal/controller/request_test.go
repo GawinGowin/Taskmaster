@@ -30,10 +30,17 @@ func newLoop(t *testing.T, programs map[string]config.Program) *Controller {
 // newLoopWithLogger は、イベントログを logger に書く newLoop。
 func newLoopWithLogger(t *testing.T, programs map[string]config.Program, logger *slog.Logger) *Controller {
 	t.Helper()
-	c, err := New(&config.Config{Programs: programs})
+	c, err := New("", &config.Config{Programs: programs})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	runLoop(t, c, logger)
+	return c
+}
+
+// runLoop は c の Run を別の goroutine で始め、後始末で quit を送って Run が返るのを wait まで待つ。
+func runLoop(t *testing.T, c *Controller, logger *slog.Logger) {
+	t.Helper()
 	go c.Run(logger)
 	t.Cleanup(func() {
 		select {
@@ -47,7 +54,6 @@ func newLoopWithLogger(t *testing.T, programs map[string]config.Program, logger 
 		}
 		c.Close()
 	})
-	return c
 }
 
 // idle は、子を起動しない program の設定を返す。
@@ -211,7 +217,7 @@ func TestRequest_Quit(t *testing.T) {
 // program は名前の昇順と numprocs の 2 桁を見るために 3 つ置く。
 // w の numprocs を 12 にするのは、文字列の昇順だと w:10 が w:2 より前に来るから。
 func TestResolve(t *testing.T) {
-	c, err := New(&config.Config{Programs: map[string]config.Program{
+	c, err := New("", &config.Config{Programs: map[string]config.Program{
 		"w":       idle(12),
 		"healthy": idle(2),
 		"a":       idle(1),

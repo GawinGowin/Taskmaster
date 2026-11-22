@@ -143,7 +143,7 @@ func program(stdout, stderr string) config.Program {
 func TestNew_SharesSinks(t *testing.T) {
 	dir := t.TempDir()
 	shared := filepath.Join(dir, "shared.log")
-	c, err := New(&config.Config{Programs: map[string]config.Program{
+	c, err := New("", &config.Config{Programs: map[string]config.Program{
 		"a": program(shared, shared),
 		"b": program(shared, filepath.Join(dir, "b.err")),
 		"q": program("", ""),
@@ -173,7 +173,7 @@ func TestNew_SharesSinks(t *testing.T) {
 func TestNew_FailureClosesSinks(t *testing.T) {
 	dir := t.TempDir()
 	ok := filepath.Join(dir, "ok.log")
-	_, err := New(&config.Config{Programs: map[string]config.Program{
+	_, err := New("", &config.Config{Programs: map[string]config.Program{
 		"a": program(ok, ok),
 		"b": program(ok, filepath.Join(dir, "missing", "b.err")), // 親ディレクトリが無いので開けない
 	}})
