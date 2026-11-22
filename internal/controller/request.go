@@ -53,6 +53,9 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 		ret = append(ret, errs...)
 		return ret
 	case CmdReload: // 引数無し
+		if len(targets) > 0 {
+			return []string{"reload: takes no arguments"}
+		}
 		if c.shutdown {
 			return []string{"reload: ERROR (shutting down)"}
 		}
