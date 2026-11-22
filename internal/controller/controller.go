@@ -20,6 +20,8 @@ import (
 )
 
 type Controller struct {
+	cfgPath  string
+	cfg      *config.Config
 	groups   map[string]*ProgramGroup
 	order    []string
 	names    atomic.Pointer[[]string]
@@ -34,8 +36,10 @@ type Controller struct {
 // バックオフ 500 msは暫定値
 const backoffUnit = 500 * time.Millisecond
 
-func New(cfg *config.Config) (*Controller, error) {
+func New(cfgPath string, cfg *config.Config) (*Controller, error) {
 	var c Controller
+	c.cfgPath = cfgPath
+	c.cfg = cfg
 	c.order = slices.Sorted(maps.Keys(cfg.Programs))
 	c.publishNames()
 	c.groups = make(map[string]*ProgramGroup, len(c.order))
@@ -102,7 +106,7 @@ func (c *Controller) Run(logger *slog.Logger) {
 	}()
 
 	for _, name := range c.order {
-		if g := c.groups[name]; g.spec.Autostart {
+		if g := c.groups[name]; c.cfg.Programs[name].Autostart {
 			for _, p := range g.procs {
 				c.start(p)
 			}
@@ -385,7 +389,6 @@ func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
 }
 
 type ProgramGroup struct {
-	spec   config.Program // type Process も同様に値として持つので暫定で持たせる
 	stdout *process.Sink
 	stderr *process.Sink
 	procs  []*process.Process
@@ -393,8 +396,6 @@ type ProgramGroup struct {
 
 func (c *Controller) newProgramGroup(p *config.Program, name string) (*ProgramGroup, error) {
 	var pg ProgramGroup
-	pg.spec = *p
-
 	var err error
 	pg.stdout, err = c.sinkFor(string(p.Stdout))
 	if err != nil {

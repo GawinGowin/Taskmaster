@@ -74,7 +74,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("log file: %w", err)
 	}
-	c, err := controller.New(cfg)
+	c, err := controller.New(*cfgPath, cfg)
 	if err != nil {
 		return err
 	}
