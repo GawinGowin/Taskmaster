@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -199,11 +200,21 @@ func (c *Controller) Run(logger *slog.Logger) {
 			case syscall.SIGINT, syscall.SIGTERM:
 				c.beginShutdown("signal", signal)
 			case syscall.SIGHUP:
-				c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
-					signal,
-					slog.String("action", "ignore"),
-					slog.String("reason", "not_implemented"),
-				)
+				if c.shutdown {
+					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
+						[]slog.Attr{
+							signal,
+							slog.String("action", "ignore"),
+							slog.String("reason", "already_shutting_down"),
+						}...,
+					)
+				} else {
+					c.logger.LogAttrs(context.Background(), slog.LevelInfo, "signal",
+						signal,
+						slog.String("action", "reload"),
+					)
+					c.reload("signal")
+				}
 			}
 
 		case evStopTimeout:
@@ -368,6 +379,76 @@ func (c *Controller) isAllTerminal() bool {
 		}
 	}
 	return true
+}
+
+func (c *Controller) reload(by string) []string {
+	showErr := func(msg string) []string {
+		c.logger.LogAttrs(context.Background(), slog.LevelError, "reload",
+			[]slog.Attr{
+				slog.String("by", by),
+				slog.String("err", msg),
+			}...)
+		return []string{fmt.Sprintf("reload: ERROR (%s)", msg)}
+	}
+
+	newCfg, err := config.Load(c.cfgPath)
+	if err != nil {
+		return showErr(err.Error())
+	}
+	changes := config.Diff(c.cfg, newCfg)
+	outSinks := map[string]*process.Sink{}
+	errSinks := map[string]*process.Sink{}
+	n := 0
+	stat := [5][]string{}
+	for _, change := range changes {
+		setSinks := func() error {
+			outSinks[change.Name], err = c.sinkFor(string(newCfg.Programs[change.Name].Stdout))
+			if err != nil {
+				return fmt.Errorf("%s: stdout: %v", change.Name, err)
+			}
+			errSinks[change.Name], err = c.sinkFor(string(newCfg.Programs[change.Name].Stderr))
+			if err != nil {
+				return fmt.Errorf("%s: stderr: %v", change.Name, err)
+			}
+			return nil
+		}
+		switch change.Kind {
+		case config.Unchanged:
+			n++
+		case config.Added, config.Changed:
+			err := setSinks()
+			if err != nil {
+				return showErr(err.Error())
+			}
+			stat[change.Kind] = append(stat[change.Kind], change.Name)
+		default:
+			stat[change.Kind] = append(stat[change.Kind], change.Name)
+		}
+	}
+	attr := []slog.Attr{slog.String("by", by)}
+	for i, s := range stat {
+		if len(s) > 0 {
+			attr = append(attr, slog.String(config.ChangeKind(i).String(), strings.Join(s, ",")))
+		}
+	}
+	attr = append(attr, slog.Int("unchanged", n))
+	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "reload", attr...)
+	for _, change := range changes {
+		switch change.Kind {
+		case config.Unchanged:
+			continue
+		case config.Added:
+
+		case config.Removed:
+
+		case config.Resized:
+
+		case config.Changed:
+
+		default:
+		}
+	}
+	return []string{"not implemented"}
 }
 
 func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {

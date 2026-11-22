@@ -52,8 +52,11 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 		}
 		ret = append(ret, errs...)
 		return ret
-	case CmdReload:
-		return []string{"not implemented"}
+	case CmdReload: // 引数無し
+		if c.shutdown {
+			return []string{"reload: ERROR (shutting down)"}
+		}
+		return c.reload("shell")
 	case CmdQuit:
 		c.beginShutdown("cmd", slog.String("cmd", "quit"))
 		return []string{"shutting down"}

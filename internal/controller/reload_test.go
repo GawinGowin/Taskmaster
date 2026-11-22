@@ -234,7 +234,7 @@ func TestReload_LogLine(t *testing.T) {
 	lines := l.finish(t)
 
 	first := mustIndexAfter(t, lines, -1, "msg=reload ")
-	want := "msg=reload by=shell added=new1,new2 changed=workers removed=oldprog resized=batch unchanged=1"
+	want := "msg=reload by=shell added=new1,new2 removed=oldprog resized=batch changed=workers unchanged=1"
 	if !strings.Contains(lines[first], want) {
 		t.Errorf("1 回目の reload の行\n got = %s\nwant に %q を含む", lines[first], want)
 	}

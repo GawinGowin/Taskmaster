@@ -290,6 +290,21 @@ const (
 	Changed
 )
 
+var changeKindStr = map[ChangeKind]string{
+	Unchanged: "unchanged",
+	Added:     "added",
+	Removed:   "removed",
+	Resized:   "resized",
+	Changed:   "changed",
+}
+
+func (k ChangeKind) String() string {
+	if s, ok := changeKindStr[k]; ok {
+		return s
+	}
+	return fmt.Sprintf("ChangeKind(%d)", int(k))
+}
+
 func Diff(old *Config, new *Config) []Change {
 	changes := []Change{}
 	for p, v := range new.Programs {
