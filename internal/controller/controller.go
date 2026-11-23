@@ -438,18 +438,34 @@ func (c *Controller) reload(by string) []string {
 		switch change.Kind {
 		case config.Unchanged:
 			continue
-		case config.Added:
+		case config.Added, config.Changed:
+			prog := newCfg.Programs[change.Name]
+			outSink := outSinks[change.Name]
+			errSink := errSinks[change.Name]
+			g := &ProgramGroup{stdout: outSink, stderr: errSink}
+			for i := 0; i < prog.Numprocs; i++ {
+				id := fmt.Sprintf("%s:%d", change.Name, i)
+				p, ok := c.byID[id]
+				if !ok {
+					p = process.New(&prog, change.Name, i, outSink, errSink)
+					c.byID[id] = p
+				}
+				g.procs = append(g.procs, p)
+				c.applySpec(p, &prog, outSink, errSink)
+			}
+			c.groups[change.Name] = g
 
 		case config.Removed:
 
 		case config.Resized:
 
-		case config.Changed:
-
 		default:
 		}
 		msg = append(msg, change.String())
 	}
+	c.order = slices.Sorted(maps.Keys(newCfg.Programs))
+	c.cfg = newCfg
+	c.publishNames()
 	if n == len(changes) {
 		msg = append(msg, "no changes")
 	} else {
@@ -520,6 +536,30 @@ func (c *Controller) sinkFor(path string) (*process.Sink, error) {
 	}
 	c.sinks[abs] = s
 	return s, nil
+}
+
+// 新しい spec を当て、state と autostart に応じて止める・起動する
+func (c *Controller) applySpec(old *process.Process, prog *config.Program, outSink, errSink *process.Sink) {
+	st := old.State()
+	shouldStop := st == process.Starting ||
+		st == process.Running ||
+		st == process.Backoff
+	// 予約ありの Stopping もしくは, Starting / Running / Backoff
+	isRunning := shouldStop || (old.StartAfterStop() != "" && st == process.Stopping)
+	if shouldStop {
+		c.stop(old, slog.String("by", "reload"))
+	}
+	old.SetSpec(prog, outSink, errSink)
+	if isRunning || prog.Autostart {
+		if old.State() == process.Stopping {
+			if old.StartAfterStop() == "" {
+				old.SetStartAfterStop("reload")
+			}
+		} else {
+			old.ResetRetries()
+			c.start(old, slog.String("by", "reload"))
+		}
+	}
 }
 
 func death(ps *os.ProcessState, err error) (slog.Attr, string) {

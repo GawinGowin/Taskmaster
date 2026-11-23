@@ -216,6 +216,13 @@ func (p *Process) SetStartAfterStop(by string) {
 	p.startAfterStop = by
 }
 
+// reload からのみ呼び出す
+func (p *Process) SetSpec(prog *config.Program, stdout *Sink, stderr *Sink) {
+	p.prog = *prog
+	p.stdout = stdout
+	p.stderr = stderr
+}
+
 func envSlice(m map[string]string) []string {
 	if m == nil {
 		return nil
