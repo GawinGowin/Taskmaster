@@ -418,7 +418,7 @@ func (c *Controller) reload(by string) []string {
 		switch change.Kind {
 		case config.Unchanged:
 			n++
-		case config.Added, config.Changed:
+		case config.Added, config.Changed, config.Resized:
 			err := setSinks()
 			if err != nil {
 				return showErr(err.Error())
@@ -449,7 +449,7 @@ func (c *Controller) reload(by string) []string {
 		switch change.Kind {
 		case config.Unchanged:
 			continue
-		case config.Added, config.Changed:
+		case config.Added, config.Changed, config.Resized:
 			prog := newCfg.Programs[change.Name]
 			outSink := outSinks[change.Name]
 			errSink := errSinks[change.Name]
@@ -463,7 +463,11 @@ func (c *Controller) reload(by string) []string {
 					c.byID[id] = p
 				}
 				g.procs = append(g.procs, p)
-				c.applySpec(p, &prog, outSink, errSink)
+				if change.Kind == config.Resized && i < len(old.procs) {
+					p.SetSpec(&prog, outSink, errSink)
+				} else {
+					c.applySpec(p, &prog, outSink, errSink)
+				}
 			}
 			c.groups[change.Name] = g
 			if old != nil && len(old.procs) > prog.Numprocs {
@@ -478,10 +482,6 @@ func (c *Controller) reload(by string) []string {
 			for _, p := range old.procs {
 				stopAndDelete(p)
 			}
-
-		case config.Resized:
-
-		default:
 		}
 		msg = append(msg, change.String())
 	}
