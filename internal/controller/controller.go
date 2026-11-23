@@ -154,6 +154,9 @@ func (c *Controller) Run(logger *slog.Logger) {
 
 			case process.Stopping:
 				c.to(slog.LevelInfo, p, process.Stopped, how)
+				if g, ok := c.groups[p.Name()]; !ok || !slices.Contains(g.procs, p) {
+					delete(c.byID, p.ID())
+				}
 				by := p.StartAfterStop()
 				if by != "" {
 					p.SetStartAfterStop("")
@@ -434,6 +437,14 @@ func (c *Controller) reload(by string) []string {
 	attr = append(attr, slog.Int("unchanged", n))
 	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "reload", attr...)
 	msg := []string{}
+
+	stopAndDelete := func(p *process.Process) {
+		c.stop(p, slog.String("by", "reload"))
+		if p.State().IsTerminal() {
+			delete(c.byID, p.ID())
+		}
+	}
+
 	for _, change := range changes {
 		switch change.Kind {
 		case config.Unchanged:
@@ -442,6 +453,7 @@ func (c *Controller) reload(by string) []string {
 			prog := newCfg.Programs[change.Name]
 			outSink := outSinks[change.Name]
 			errSink := errSinks[change.Name]
+			old := c.groups[change.Name]
 			g := &ProgramGroup{stdout: outSink, stderr: errSink}
 			for i := 0; i < prog.Numprocs; i++ {
 				id := fmt.Sprintf("%s:%d", change.Name, i)
@@ -454,8 +466,18 @@ func (c *Controller) reload(by string) []string {
 				c.applySpec(p, &prog, outSink, errSink)
 			}
 			c.groups[change.Name] = g
+			if old != nil && len(old.procs) > prog.Numprocs {
+				for _, p := range old.procs[prog.Numprocs:] {
+					stopAndDelete(p)
+				}
+			}
 
 		case config.Removed:
+			old := c.groups[change.Name]
+			delete(c.groups, change.Name)
+			for _, p := range old.procs {
+				stopAndDelete(p)
+			}
 
 		case config.Resized:
 
