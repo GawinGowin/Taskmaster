@@ -31,7 +31,7 @@ func validateProgram(c *Config) error {
 			}
 		}
 		if len(c.Programs[n].Cmd) == 0 {
-			 return fmt.Errorf("%q: cmd must not be empty", n)
+			return fmt.Errorf("%q: cmd must not be empty", n)
 		}
 	}
 	return nil

@@ -149,7 +149,7 @@ func (p *Process) Pid() int {
 	return p.proc.Pid
 }
 
-func (p *Process) ID() string   { return fmt.Sprintf("%s:%d", p.name, p.index) }
+func (p *Process) ID() string { return fmt.Sprintf("%s:%d", p.name, p.index) }
 
 func (p *Process) Name() string { return p.name }
 
