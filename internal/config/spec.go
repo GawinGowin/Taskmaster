@@ -280,6 +280,19 @@ type Change struct {
 	NewNumprocs int
 }
 
+func (c Change) String() string {
+	switch c.Kind {
+	case Unchanged:
+		return ""
+	case Added, Removed, Changed:
+		return c.Name + ": " + c.Kind.String()
+	case Resized:
+		return fmt.Sprintf("%s: %s (%d -> %d)", c.Name, c.Kind.String(), c.OldNumprocs, c.NewNumprocs)
+	default:
+		return c.Name + ": " + c.Kind.String()
+	}
+}
+
 type ChangeKind int
 
 const (

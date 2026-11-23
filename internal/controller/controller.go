@@ -433,6 +433,7 @@ func (c *Controller) reload(by string) []string {
 	}
 	attr = append(attr, slog.Int("unchanged", n))
 	c.logger.LogAttrs(context.Background(), slog.LevelInfo, "reload", attr...)
+	msg := []string{}
 	for _, change := range changes {
 		switch change.Kind {
 		case config.Unchanged:
@@ -447,8 +448,14 @@ func (c *Controller) reload(by string) []string {
 
 		default:
 		}
+		msg = append(msg, change.String())
 	}
-	return []string{"not implemented"}
+	if n == len(changes) {
+		msg = append(msg, "no changes")
+	} else {
+		msg = append(msg, fmt.Sprintf("%d unchanged", n))
+	}
+	return msg
 }
 
 func (c *Controller) sendSignal(p *process.Process, sig syscall.Signal) {
