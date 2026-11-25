@@ -1,6 +1,7 @@
 name: Claude Post-merge Review
 
 # main に入った後で Claude に検証させ、問題があれば Issue で知らせる。マージは止めない。
+# 同じ実行で、open の claude-audit Issue を今の main と突き合わせ、対応が要らなくなったものを close する。
 # claude-code-action は push イベントで起動できないので、CI の完了を workflow_run で受ける。
 # workflow_run はデフォルトブランチにあるワークフローファイルでしか発火しない。
 on:
@@ -21,7 +22,8 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       contains(fromJSON('["success", "failure"]'), github.event.workflow_run.conclusion)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 既存の Issue の見直しで、指摘ごとにテストを回し直すぶんを足している。
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -89,16 +91,28 @@ jobs:
                - **bug**: 確かめた上で問題だと言えるもの。バグ、仕様の取り違え、競合状態、goroutine のリーク、fd・子プロセス・ゾンビのリーク、シグナルの取りこぼし、エラーの握りつぶし、`wiki/` に書かれた振る舞いと実装の食い違い（どちらが正しそうかも書く）
                - **疑い**: 問題かもしれないが確かめきれなかったもの。何を確かめられなかったのか、どうすれば確かめられるかも書く
                - **nit**: 動作には響かないが直したほうがよいもの。命名、コメントと実装のずれ、読みにくさ、足りないテストの提案など。好みだけで理由が言えないものは書かない
-            3. 報告することが 1 つも無ければ、何もせずに終了する。
-            4. 報告する前に `gh issue list --label claude-audit --state open` で既存の Issue を確かめる。同じ指摘が既にあれば新しく書かず、追記することがあれば `gh issue comment` で書く。
-            5. 新しく起票するのは 1 回の実行で最大 1 件。nit だけでも起票する。
+            3. 新しい指摘の有無にかかわらず、`gh issue list --label claude-audit --state open` の Issue を 1 件ずつ見直す。`claude-audit` ラベルの無い Issue には触らない。
+               `gh issue view <番号> --comments` で本文とコメントを読み、本文の指摘を 1 つずつ、チェックアウト済みの今の main（${{ github.event.workflow_run.head_sha }}）のコードと `wiki/` に照らして次のどれかに分ける。
+               - **直った**: 指摘された箇所が変わり、問題が起きなくなった。直したコミットを `git log` で特定し、指摘に再現の手順やテスト名があれば `go test` で回して確かめる
+               - **対応不要**: 指摘の前提が成り立たない。読み違いだった（コードや wiki を読み直すと、指摘された動作は起きない）、wiki がその動作を意図したものとして書くようになった、Issue のコメントでリポジトリの所有者（${{ github.repository_owner }}）が対応しないと書いた、のどれか
+               - **未解決**: 今の main でも指摘のとおり
+               - **確かめられない**: 上のどれとも決められない
+               「nit なので直さなくてよい」「影響が小さい」はあなたの判断なので、対応不要に入れない。
+
+               すべての指摘が「直った」か「対応不要」なら close する。指摘ごとに判定と根拠（コミット、ファイルと行、回したテストとその結果）を書いたコメントを付ける。
+               全部が「直った」なら `gh issue close <番号> --reason completed --comment "<コメント>"`、1 つでも「対応不要」があれば `--reason "not planned"` にする。
+               「未解決」か「確かめられない」が 1 つでも残る Issue は close しない。一部が「直った」か「対応不要」になったときだけ、その指摘と根拠を `gh issue comment` で書く。
+               前のコメントと判定が変わらないなら、コメントを書かない。
+            4. 手順 1 / 2 で報告することが 1 つも無ければ、ここで終了する。
+            5. 報告する前に、手順 3 で open のまま残した Issue と突き合わせる。同じ指摘が既にあれば新しく書かず、追記することがあれば `gh issue comment` で書く。
+            6. 新しく起票するのは 1 回の実行で最大 1 件。nit だけでも起票する。
                - タイトル: `post-merge: <要約>`。nit しか無いときは `post-merge(nit): <要約>`
                - ラベル: `claude-audit`
                - 本文: 対象のコミット範囲、CI の実行 URL、そのあと `## bug` / `## 疑い` / `## nit` の見出しで分けて箇条書きにする（無い段階の見出しは省く）。指摘ごとにファイルと行・何が起きるか（入力や状態 → 結果）・根拠
                - 日本語で書く
           claude_args: >-
             --model claude-opus-5-5
-            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git -C wiki log:*),Bash(git -C wiki diff:*),Bash(go test:*),Bash(go vet:*),Bash(go build:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git -C wiki log:*),Bash(git -C wiki diff:*),Bash(go test:*),Bash(go vet:*),Bash(go build:*),Bash(go list:*),Bash(go doc:*),Bash(go env:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue close:*)"
 
       # Artifact の名前は run の中で重ねられず、再実行は同じ run になるので、試行の番号を付けて分ける。
       - name: Upload the Claude transcript
