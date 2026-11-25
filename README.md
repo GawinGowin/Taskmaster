@@ -4,11 +4,12 @@
 （supervisord 相当）。フォアグラウンドに留まり、制御シェルから状態を見たり start / stop したりできる。
 
 > [!NOTE]
-> **現状は起動・再起動・停止とイベントログまで実装済み。** 設定を読み、`autostart` の program を起動して STARTING → RUNNING → EXITED の遷移を追い、
+> **現状は起動・再起動・停止、イベントログ、制御シェル、設定の再読み込みまで実装済み。** 設定を読み、`autostart` の program を起動して STARTING → RUNNING → EXITED の遷移を追い、
 > `autorestart` / `exitcodes` で上げ直す。`starttime` 内に死んだ起動失敗は BACKOFF を挟んで再試行し、`startretries` を超えると FATAL。
 > SIGINT / SIGTERM を受けると全 program を `stopsignal` → `stoptime` 経過で SIGKILL の順に止めてから終了する（どちらもプロセスグループ宛）。
 > 遷移・起動・SIGKILL・受けたシグナルは[イベントログ](#イベントログ)のファイルに 1 行ずつ追記する。`umask` は子にだけ効く。
-> 制御シェル・SIGHUP での再読み込み（現状は受けてログに残すだけ）は未実装。
+> 制御シェルでは `status` / `start` / `stop` / `restart` / `reload` / `quit` が使える。
+> SIGHUP かシェルの `reload` で設定ファイルを読み直し、program ごとの差分だけを反映する。変わっていない program のプロセスは再起動しない。
 
 ## ビルドと実行
 
@@ -214,3 +215,38 @@ cmd: ["sh", "-c", "echo $$HOME"]    # $$ はリテラルの $。子のシェル�
 | `127` | 探したあとでファイルが消えた、または shebang のインタプリタが無い |
 
 理由は子の `stderr` に `error: __spawn: exec <パス>: <理由>` の 1 行で残る（`stderr` 未指定なら捨てられる）。
+
+## 設定の再読み込み
+
+taskmasterd に SIGHUP を送るか、制御シェルで `reload` と打つと、起動時に `-c` で渡した設定ファイルを読み直す。
+設定ファイルのパスは reload では変えられない。
+
+```sh
+kill -HUP $(pgrep -x taskmasterd)
+```
+
+```
+taskmaster> reload
+batch: resized (2 -> 4)
+newprog: added
+oldprog: removed
+workers: changed
+11 unchanged
+```
+
+今の設定と新しい設定を program 名で突き合わせ、program ごとに次のどれかに分けて反映する。
+
+| 種類 | 条件 | 動作 |
+|---|---|---|
+| added | 新しい設定にだけある | プロセスを作り、`autostart` が true なら起動する |
+| removed | 今の設定にだけある | 全プロセスを `stopsignal` → `stoptime` で止め、`status` からはすぐ消える |
+| resized | `numprocs` だけが違う | 増えた index は added、減った index は removed と同じに扱う。残る index は再起動しない |
+| changed | `numprocs` 以外のどれかが違う | 動いていたプロセスは止めてから新しい設定で起動し直す。止まっていたプロセスは新しい `autostart` に従う |
+| unchanged | すべて同じ | 何もしない。pid も変わらない |
+
+- program の名前を変えると、旧名が removed、新名が added になる
+- `exitcodes: [2, 0]` と `[0, 2]`、`env:` と `env: {}` は同じ設定として扱い、changed にならない
+- 設定ファイルが読めない、検証に通らない、`stdout` / `stderr` を開けないときは、何も反映せずに今の設定のまま動き続ける。シェルには `reload: ERROR (<エラー文>)` を出す
+- シェルの応答は反映を始めた時点で返す。changed のプロセスが起動し直したかは `status` か、イベントログの `by=reload` の行で見る
+
+状態ごとの細かい動作は wiki の[設定の再読み込み](https://github.com/GawinGowin/Taskmaster/wiki/Config-Reload)にある。
