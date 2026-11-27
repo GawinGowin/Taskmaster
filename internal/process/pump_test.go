@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -21,7 +23,7 @@ func runPump(t *testing.T, write func(w *os.File)) []byte {
 
 	done := make(chan struct{})
 	go func() {
-		pump(r, s)
+		pump(r, s, nil, Source{})
 		close(done)
 	}()
 
@@ -116,7 +118,7 @@ func TestPump_WaitsForAllWriters(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		pump(r, s)
+		pump(r, s, nil, Source{})
 		close(done)
 	}()
 
@@ -132,5 +134,112 @@ func TestPump_WaitsForAllWriters(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("最後の書き端を閉じても pump が終わらない")
+	}
+}
+
+// runPumpView は runPump と同じく pump を走らせ、src を出どころにして View にも書かせる。
+// ファイルの中身と、View に登録した宛先に届いた行（wantLines 行が届くまで待つ）を返す。
+func runPumpView(t *testing.T, src Source, wantLines int, write func(w *os.File)) (file []byte, view []string) {
+	t.Helper()
+	s, path := newTestSink(t)
+	v := NewView()
+	rec := newRecorder()
+	unreg := v.Register(all, rec)
+	defer unreg()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		pump(r, s, v, src)
+		close(done)
+	}()
+	write(w)
+	if err := w.Close(); err != nil {
+		t.Fatalf("書き端の Close: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("書き端を閉じても pump が終わらない")
+	}
+
+	view = rec.waitLines(t, wantLines)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Sink の Close: %v", err)
+	}
+	file, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("読めない: %v", err)
+	}
+	return file, view
+}
+
+// TestPump_ToView は、pump が同じ行をファイル層には素のまま、ビュー層には出どころを付けて渡すことを見る。
+func TestPump_ToView(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  Source
+		in   string
+		want []string
+	}{
+		{
+			name: "stdout",
+			src:  Source{Name: "p", Index: 0, Pid: 123},
+			in:   "a\n{\"k\":1}\n",
+			want: []string{"p:0/123 | a", `p:0/123 | {"k":1}`},
+		},
+		{
+			name: "stderr",
+			src:  Source{Name: "p", Index: 2, Pid: 9, Stderr: true},
+			in:   "oops\n",
+			want: []string{"p:2/9 ! oops"},
+		},
+		{
+			name: "改行で終わらない最後の断片",
+			src:  Source{Name: "p", Index: 0, Pid: 123},
+			in:   "line\nno newline",
+			want: []string{"p:0/123 | line", "p:0/123 | no newline ↵"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, view := runPumpView(t, tc.src, len(tc.want), func(w *os.File) { writeAll(t, w, []byte(tc.in)) })
+			if string(file) != tc.in {
+				t.Errorf("ファイル = %q, want %q（ファイル層は書いたバイト列のまま）", file, tc.in)
+			}
+			if !slices.Equal(view, tc.want) {
+				t.Errorf("ビュー = %q, want %q", view, tc.want)
+			}
+		})
+	}
+}
+
+// TestPump_LongLineToView は、40000 バイトの 1 行が、ビュー層では 16 KiB ごとの 3 行に分かれ、
+// 改行で終わらない 2 つの塊に ↵ が付くことを見る。ファイル層では元の 1 行のまま。
+func TestPump_LongLineToView(t *testing.T) {
+	const n = 40000
+	in := append(bytes.Repeat([]byte{'x'}, n), '\n')
+	src := Source{Name: "p", Index: 0, Pid: 1}
+
+	file, view := runPumpView(t, src, 3, func(w *os.File) { writeAll(t, w, in) })
+	if !bytes.Equal(file, in) {
+		t.Errorf("ファイルに %d B 届いた, want %d B", len(file), len(in))
+	}
+
+	prefix := "p:0/1 | "
+	want := []string{
+		prefix + strings.Repeat("x", maxLine) + " ↵",
+		prefix + strings.Repeat("x", maxLine) + " ↵",
+		prefix + strings.Repeat("x", n-2*maxLine),
+	}
+	if len(view) != len(want) {
+		t.Fatalf("ビューに %d 行届いた, want %d 行", len(view), len(want))
+	}
+	for i := range want {
+		if view[i] != want[i] {
+			t.Errorf("ビューの %d 行目 = %q, want %q", i, abbrev(view[i]), abbrev(want[i]))
+		}
 	}
 }

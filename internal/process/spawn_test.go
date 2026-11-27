@@ -40,7 +40,7 @@ func runEnv(t *testing.T, prog *config.Program) []string {
 	t.Helper()
 	s, path := newTestSink(t)
 
-	p := New(prog, "p", 0, s, nil)
+	p := New(prog, "p", 0, s, nil, nil)
 	wait, err := p.Start()
 	if err != nil {
 		t.Fatalf("Start: %v", err)
