@@ -15,6 +15,8 @@ const usageText = `commands:
   restart <name>... | all   stop and start programs
   status  [<name>...]       show program status (all if no name)
   reload                    reread the config file and apply changes
+  logs                      follow the target log output continuously
+                            press q to return to the prompt (all if no name)
   quit                      stop all programs and exit taskmasterd
   help                      show this message`
 
@@ -64,6 +66,7 @@ func newCompleter(names func() []string) *readline.PrefixCompleter {
 		readline.PcItem("stop", args),
 		readline.PcItem("restart", args),
 		readline.PcItem("status", args),
+		readline.PcItem("logs", args),
 		readline.PcItem("reload"),
 		readline.PcItem("quit"),
 		readline.PcItem("help"),

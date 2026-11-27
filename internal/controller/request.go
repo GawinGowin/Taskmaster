@@ -52,6 +52,8 @@ func (c *Controller) handleRequest(ev evRequest) []string {
 		}
 		ret = append(ret, errs...)
 		return ret
+	case CmdLogs: // 引数あり
+		return []string{"not implemented"}
 	case CmdReload: // 引数無し
 		if len(targets) > 0 {
 			return []string{"reload: takes no arguments"}

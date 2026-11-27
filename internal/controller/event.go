@@ -44,6 +44,7 @@ const (
 	CmdStop
 	CmdRestart
 	CmdStatus
+	CmdLogs
 	CmdReload
 	CmdQuit
 )
@@ -53,6 +54,7 @@ var availableCommand = map[string]Command{
 	"stop":    CmdStop,
 	"restart": CmdRestart,
 	"status":  CmdStatus,
+	"logs":    CmdLogs,
 	"reload":  CmdReload,
 	"quit":    CmdQuit,
 }
